@@ -2549,7 +2549,7 @@ class SudoQuest {
     this.addBlank();
     this.addLine(`${due.length} level${due.length > 1 ? 's' : ''} due for review:`, 'system');
     this.addBlank();
-    due.slice(0, 10).forEach((r) => {
+    due.slice(0, 10).forEach((r, i) => {
       const cat = getCategoryByKey(r.catKey);
       if (!cat) return;
       const level = cat.levels.find(l => l.id === r.levelId);
