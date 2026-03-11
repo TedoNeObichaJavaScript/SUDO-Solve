@@ -207,7 +207,7 @@ class SudoQuest {
     const art = `
  ╔═╗ ╦ ╦ ╔╦╗ ╔═╗   ╔═╗ ╦ ╦ ╔═╗ ╔═╗ ╔╦╗
  ╚═╗ ║ ║  ║║ ║ ║   ║ ║ ║ ║ ║╣  ╚═╗  ║
- ╚═╝ ╚═╝ ═╩╝ ╚═╝   ╚═╝ ╚═╝ ╚═╝ ╚═╝  ╩`;
+ ╚═╝ ╚═╝ ═╩╝ ╚═╝   ╚╩╝ ╚═╝ ╚═╝ ╚═╝  ╩`;
 
     this.addHTML(`<pre class="ascii-art">${art}</pre>`, 'system');
     this.addBlank();
@@ -368,7 +368,7 @@ class SudoQuest {
 
     // Init score for this level
     if (!this.score[level.id]) this.score[level.id] = 100;
-    this.updateScoreDisplay(level.id);
+    this.updateScoreDisplay();
 
     if (!quiet) {
       const bar = '\u2550'.repeat(56);
@@ -607,7 +607,7 @@ class SudoQuest {
     // Deduct score for hint
     if (!this.score[id]) this.score[id] = 100;
     this.score[id] = Math.max(0, this.score[id] - 25);
-    this.updateScoreDisplay(id);
+    this.updateScoreDisplay();
 
     const prefix = revealed === 2 ? 'ANSWER' : `Hint ${revealed + 1}`;
     this.addBlank();
@@ -1294,6 +1294,7 @@ class SudoQuest {
     // Mark completed
     this.completedLevels.add(level.id);
     this.saveProgress();
+    this.updateScoreDisplay();
 
     // Check achievements
     this.checkAchievements();
@@ -1420,10 +1421,15 @@ class SudoQuest {
 
   // ── Score Display ─────────────────────────────────────────
 
-  updateScoreDisplay(levelId) {
+  updateScoreDisplay() {
     if (this.scoreDisplay) {
-      const pts = this.score[levelId] ?? 100;
-      this.scoreDisplay.textContent = `${pts}pts`;
+      let total = 0;
+      for (const l of this.levels) {
+        if (this.completedLevels.has(l.id)) {
+          total += (this.score[l.id] ?? 100);
+        }
+      }
+      this.scoreDisplay.textContent = `${total}pts`;
     }
   }
 
