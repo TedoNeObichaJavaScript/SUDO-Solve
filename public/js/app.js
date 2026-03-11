@@ -1,108 +1,53 @@
-import { LevelManager } from '/src/core/LevelManager.js';
-import { getAllLevelIds, getCategories } from '/src/config/levelConfigs.js';
+// ═══════════════════════════════════════════════════════════════
+//  SUDO QUEST — Game Engine
+// ═══════════════════════════════════════════════════════════════
 
-class SudoSolveApp {
+import { LEVELS, TOTAL_LEVELS, getLevelById, getCategories, getLevelsByCategory } from './levels.js';
+
+class SudoQuest {
   constructor() {
-    this.levelManager = new LevelManager();
-    this.currentLevel = 1;
-    this.isExecuting = false;
+    // Game state
+    this.currentLevelIndex = 0;
+    this.attempts = {};        // levelId -> attempt count
+    this.hintsRevealed = {};   // levelId -> number of hints revealed
+    this.completedLevels = new Set();
     this.commandHistory = [];
     this.historyIndex = -1;
+    this.isExecuting = false;
 
-    this.terminalInput = document.getElementById('terminal-input');
-    this.terminalOutput = document.getElementById('terminal-output');
-    this.executeBtn = document.getElementById('execute-btn');
-    this.feedbackArea = document.getElementById('feedback-area');
-    this.consoleOutput = document.getElementById('console-output');
-    this.levelTitle = document.getElementById('level-title');
-    this.levelDescription = document.getElementById('level-description');
-    this.levelObjective = document.getElementById('level-objective');
-    this.levelHints = document.getElementById('level-hints');
-    this.currentLevelDisplay = document.getElementById('current-level');
-    this.completedCount = document.getElementById('completed-count');
-    this.progressBar = document.getElementById('progress-bar');
-    this.levelSelector = document.getElementById('level-selector');
+    // Git state (persists across commands within a git level)
+    this.gitState = null;
 
-    if (!this.terminalInput) {
-      console.error('Terminal input not found!');
+    // DOM elements
+    this.output = document.getElementById('output');
+    this.input = document.getElementById('input');
+    this.runBtn = document.getElementById('run-btn');
+    this.levelIndicator = document.getElementById('level-indicator');
+    this.progressFill = document.getElementById('progress-fill');
+    this.categoryDisplay = document.getElementById('category-display');
+
+    if (!this.input || !this.output) {
+      console.error('Required DOM elements not found');
       return;
     }
-    
+
     this.init();
   }
 
-  async init() {
-    try {
+  // ── Initialization ──────────────────────────────────────────
 
-      await this.levelManager.initialize();
-
-      const progress = await this.levelManager.storage.getUserProgress();
-      this.currentLevel = progress.currentLevel || 1;
-
-      this.populateLevelSelector();
-
-      this.setupEventListeners();
-
-      await this.loadLevelInfo(this.currentLevel);
-
-      this.updateProgressDisplay(progress);
-
-      this.addOutput('System initialized. Ready to code.', 'system');
-
-      setTimeout(() => {
-        this.terminalInput?.focus();
-      }, 100);
-      
-    } catch (error) {
-      console.error('Initialization error:', error);
-      this.addOutput(`Error: ${error.message}`, 'error');
-      this.displayFeedback({
-        passed: false,
-        feedback: `Initialization failed: ${error.message}`,
-        errors: [error.message],
-        hints: ['Check browser console for details']
-      });
-    }
-  }
-
-  populateLevelSelector() {
-    if (!this.levelSelector) return;
-    
-    const levelIds = getAllLevelIds();
-    const progress = this.levelManager.storage.getUserProgress?.() || { completedLevels: [] };
-    const completedLevels = progress.completedLevels || [];
-
-    this.levelSelector.innerHTML = '';
-    
-    levelIds.forEach(levelId => {
-      const config = this.levelManager.getLevelConfig(levelId);
-      if (!config) return;
-      
-      const option = document.createElement('option');
-      option.value = levelId;
-      option.textContent = `Level ${levelId}: ${config.title}`;
-
-      if (completedLevels.includes(levelId)) {
-        option.textContent += ' ✓';
-      }
-
-
-
-
-      
-      this.levelSelector.appendChild(option);
-    });
-
-    this.levelSelector.value = this.currentLevel;
+  init() {
+    this.loadProgress();
+    this.setupEventListeners();
+    this.showWelcome();
+    this.loadLevel(this.currentLevelIndex);
   }
 
   setupEventListeners() {
-    if (!this.terminalInput) return;
-
-    this.terminalInput.addEventListener('keydown', (e) => {
+    this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !this.isExecuting) {
         e.preventDefault();
-        this.executeCode();
+        this.handleInput();
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         this.navigateHistory(-1);
@@ -112,352 +57,788 @@ class SudoSolveApp {
       }
     });
 
-    this.executeBtn?.addEventListener('click', () => {
-      if (!this.isExecuting) {
-        this.executeCode();
-      }
+    this.runBtn.addEventListener('click', () => {
+      if (!this.isExecuting) this.handleInput();
     });
 
-    this.levelSelector?.addEventListener('change', async (e) => {
-      const newLevel = parseInt(e.target.value);
-      if (newLevel !== this.currentLevel) {
-        await this.switchLevel(newLevel);
-      }
+    // Focus input when clicking anywhere on the terminal
+    this.output.addEventListener('click', () => {
+      this.input.focus();
     });
 
-    document.addEventListener('click', (e) => {
-      if (e.target !== this.terminalInput && !e.target.closest('#terminal-input')) {
-
-        if (!e.target.closest('button') && !e.target.closest('select')) {
-          setTimeout(() => this.terminalInput?.focus(), 100);
-        }
+    // Keyboard shortcut: Ctrl+L to clear
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 'l') {
+        e.preventDefault();
+        this.clearTerminal();
+        this.loadLevel(this.currentLevelIndex, true);
       }
-    });
-
-    const toggleFeedbackBtn = document.getElementById('toggle-feedback');
-    const showFeedbackBtn = document.getElementById('show-feedback-mobile');
-    const feedbackPanel = document.getElementById('feedback-panel');
-    
-    if (showFeedbackBtn && feedbackPanel) {
-      showFeedbackBtn.addEventListener('click', () => {
-        feedbackPanel.classList.remove('hidden');
-        feedbackPanel.classList.add('fixed', 'inset-0', 'z-40');
-        showFeedbackBtn.classList.add('hidden');
-      });
-    }
-    
-    if (toggleFeedbackBtn && feedbackPanel) {
-      toggleFeedbackBtn.addEventListener('click', () => {
-        feedbackPanel.classList.add('hidden');
-        feedbackPanel.classList.remove('fixed', 'inset-0', 'z-40');
-        if (showFeedbackBtn) showFeedbackBtn.classList.remove('hidden');
-      });
-    }
-
-    window.addEventListener('levelCompleted', (e) => {
-      this.handleLevelCompleted(e.detail);
     });
   }
+
+  // ── Progress Persistence ────────────────────────────────────
+
+  saveProgress() {
+    const data = {
+      currentLevelIndex: this.currentLevelIndex,
+      completedLevels: [...this.completedLevels],
+      attempts: this.attempts,
+      hintsRevealed: this.hintsRevealed
+    };
+    try {
+      localStorage.setItem('sudoquest_progress', JSON.stringify(data));
+    } catch (_) { /* ignore storage errors */ }
+  }
+
+  loadProgress() {
+    try {
+      const data = JSON.parse(localStorage.getItem('sudoquest_progress'));
+      if (data) {
+        this.currentLevelIndex = data.currentLevelIndex || 0;
+        this.completedLevels = new Set(data.completedLevels || []);
+        this.attempts = data.attempts || {};
+        this.hintsRevealed = data.hintsRevealed || {};
+      }
+    } catch (_) { /* ignore parse errors */ }
+  }
+
+  // ── Command History ─────────────────────────────────────────
 
   navigateHistory(direction) {
     if (this.commandHistory.length === 0) return;
-    
     this.historyIndex += direction;
-    
+
     if (this.historyIndex < 0) {
       this.historyIndex = -1;
-      this.terminalInput.value = '';
+      this.input.value = '';
       return;
     }
-    
     if (this.historyIndex >= this.commandHistory.length) {
       this.historyIndex = this.commandHistory.length - 1;
     }
-    
-    this.terminalInput.value = this.commandHistory[this.historyIndex] || '';
+    this.input.value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex] || '';
   }
 
-  async switchLevel(levelId) {
-    try {
-      this.currentLevel = levelId;
-      await this.loadLevelInfo(levelId);
-      this.addOutput(`Switched to Level ${levelId}`, 'system');
-      this.terminalInput?.focus();
-    } catch (error) {
-      console.error('Error switching level:', error);
-      this.addOutput(`Error switching level: ${error.message}`, 'error');
-    }
+  // ── Terminal Output ─────────────────────────────────────────
+
+  addLine(text, type = 'default') {
+    const line = document.createElement('div');
+    line.className = `line line-${type}`;
+    line.textContent = text;
+    this.output.appendChild(line);
+    this.scrollToBottom();
   }
 
-  async executeCode() {
-    const userInput = this.terminalInput?.value.trim();
-    
-    if (!userInput) {
-      return;
+  addHTML(html, type = 'default') {
+    const line = document.createElement('div');
+    line.className = `line line-${type}`;
+    line.innerHTML = html;
+    this.output.appendChild(line);
+    this.scrollToBottom();
+  }
+
+  addBlank() {
+    const line = document.createElement('div');
+    line.className = 'line';
+    line.innerHTML = '&nbsp;';
+    this.output.appendChild(line);
+    this.scrollToBottom();
+  }
+
+  scrollToBottom() {
+    this.output.scrollTop = this.output.scrollHeight;
+  }
+
+  clearTerminal() {
+    this.output.innerHTML = '';
+  }
+
+  // ── Welcome Screen ─────────────────────────────────────────
+
+  showWelcome() {
+    const art = `
+  ___  _   _  ___   ___     ___  _   _  ___  ___  _____
+ / __|| | | ||   \\ / _ \\   / _ \\| | | || __|/ __||_   _|
+ \\__ \\| |_| || |) | (_) | | (_) | |_| || _| \\__ \\  | |
+ |___/ \\___/ |___/ \\___/   \\__\\_\\\\___/ |___||___/  |_|`;
+
+    this.addHTML(`<pre class="ascii-art">${art}</pre>`, 'system');
+    this.addBlank();
+    this.addLine('Welcome to sudo quest! Learn to code, one command at a time.', 'system');
+    this.addLine('Type your code and press Enter. Type "help" for commands.', 'dim');
+    this.addBlank();
+  }
+
+  // ── Level Display ───────────────────────────────────────────
+
+  loadLevel(index, quiet = false) {
+    const level = LEVELS[index];
+    if (!level) return;
+
+    // Reset git state for git levels
+    if (level.type === 'git') {
+      this.gitState = this.createInitialGitState();
     }
 
-    if (this.isExecuting) {
-      return;
-    }
+    // Update header
+    this.updateHeader(level);
 
-    if (userInput && this.commandHistory[this.commandHistory.length - 1] !== userInput) {
-      this.commandHistory.push(userInput);
-      if (this.commandHistory.length > 50) {
-        this.commandHistory.shift();
+    if (!quiet) {
+      // Display level header in terminal
+      const bar = '═'.repeat(56);
+      this.addLine(`╔${bar}╗`, 'level-header');
+      const title = `  LEVEL ${level.id}: ${level.title}`;
+      const cat = `  Category: ${level.category}`;
+      this.addLine(`║${title.padEnd(56)}║`, 'level-header');
+      this.addLine(`║${cat.padEnd(56)}║`, 'level-header');
+      this.addLine(`╚${bar}╝`, 'level-header');
+      this.addBlank();
+      this.addLine(`> ${level.question}`, 'question');
+      this.addBlank();
+
+      const id = level.id;
+      const hintsUsed = this.hintsRevealed[id] || 0;
+      if (hintsUsed > 0) {
+        this.addLine(`Type 'hint' for help (${hintsUsed}/3 hints revealed).`, 'dim');
+      } else {
+        this.addLine("Type 'hint' if you need help (0/3 hints used).", 'dim');
       }
+      this.addLine('─'.repeat(58), 'dim');
+    }
+
+    this.input.focus();
+  }
+
+  updateHeader(level) {
+    if (this.levelIndicator) {
+      this.levelIndicator.textContent = `Level ${level.id}/${TOTAL_LEVELS}`;
+    }
+    if (this.progressFill) {
+      const pct = (this.completedLevels.size / TOTAL_LEVELS) * 100;
+      this.progressFill.style.width = `${pct}%`;
+    }
+    if (this.categoryDisplay) {
+      this.categoryDisplay.textContent = level.category;
+    }
+  }
+
+  // ── Input Handling ──────────────────────────────────────────
+
+  async handleInput() {
+    const raw = this.input.value;
+    const trimmed = raw.trim();
+    this.input.value = '';
+
+    if (!trimmed) return;
+
+    // Save to history
+    if (this.commandHistory[this.commandHistory.length - 1] !== trimmed) {
+      this.commandHistory.push(trimmed);
+      if (this.commandHistory.length > 100) this.commandHistory.shift();
     }
     this.historyIndex = -1;
 
+    // Show the command
+    this.addLine(`$ ${trimmed}`, 'command');
+
+    // Check for special commands
+    const lower = trimmed.toLowerCase();
+    if (this.handleSpecialCommand(lower)) return;
+
+    // Execute the input
     this.isExecuting = true;
-    this.executeBtn.disabled = true;
-    this.executeBtn.textContent = 'EXECUTING...';
-    this.executeBtn.classList.add('loading');
-
-    this.addOutput(`$ ${userInput}`, 'command');
-
-    this.terminalInput.value = '';
+    this.runBtn.textContent = '...';
+    this.runBtn.disabled = true;
 
     try {
+      const level = LEVELS[this.currentLevelIndex];
 
-      const result = await this.levelManager.validateLevel(this.currentLevel, userInput);
-
-      if (result.worldState && result.worldState.consoleLogs) {
-        this.displayConsoleOutput(result.worldState.consoleLogs);
-      }
-
-      this.displayFeedback(result);
-
-      if (result.passed) {
-        await this.handleLevelPassed();
+      if (level.type === 'git') {
+        await this.executeGit(trimmed, level);
       } else {
-        this.addOutput(result.feedback, 'error');
-        if (result.hints && result.hints.length > 0) {
-          this.addOutput(`Hints: ${result.hints.join(', ')}`, 'hint');
-        }
+        await this.executeJS(trimmed, level);
       }
-
-    } catch (error) {
-      console.error('Execution error:', error);
-      this.addOutput(`Error: ${error.message}`, 'error');
-      this.displayFeedback({
-        passed: false,
-        feedback: `Execution failed: ${error.message}`,
-        errors: [error.message],
-        hints: ['Check your code syntax', 'Make sure you\'re using valid JavaScript']
-      });
+    } catch (err) {
+      this.addLine(`Error: ${err.message}`, 'error');
     } finally {
       this.isExecuting = false;
-      this.executeBtn.disabled = false;
-      this.executeBtn.textContent = 'EXECUTE';
-      this.executeBtn.classList.remove('loading');
+      this.runBtn.textContent = 'RUN';
+      this.runBtn.disabled = false;
+      this.input.focus();
+    }
+  }
+
+  handleSpecialCommand(cmd) {
+    if (cmd === 'help') {
+      this.showHelp();
+      return true;
+    }
+    if (cmd === 'hint') {
+      this.revealHint();
+      return true;
+    }
+    if (cmd === 'clear') {
+      this.clearTerminal();
+      this.loadLevel(this.currentLevelIndex, true);
+      return true;
+    }
+    if (cmd === 'reset') {
+      this.resetLevel();
+      return true;
+    }
+    if (cmd === 'levels') {
+      this.showLevels();
+      return true;
+    }
+    if (cmd === 'skip' || cmd === 'next') {
+      this.skipLevel();
+      return true;
+    }
+    if (cmd.startsWith('level ')) {
+      const num = parseInt(cmd.split(' ')[1]);
+      if (!isNaN(num)) {
+        this.jumpToLevel(num);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ── Special Commands ────────────────────────────────────────
+
+  showHelp() {
+    this.addBlank();
+    this.addLine('╔══════════════════════════════════════╗', 'system');
+    this.addLine('║          AVAILABLE COMMANDS          ║', 'system');
+    this.addLine('╠══════════════════════════════════════╣', 'system');
+    this.addLine('║  hint    — Reveal next hint          ║', 'system');
+    this.addLine('║  clear   — Clear terminal            ║', 'system');
+    this.addLine('║  reset   — Reset current level       ║', 'system');
+    this.addLine('║  levels  — Show all levels           ║', 'system');
+    this.addLine('║  level N — Jump to level N           ║', 'system');
+    this.addLine('║  skip    — Skip to next level        ║', 'system');
+    this.addLine('║  help    — Show this help            ║', 'system');
+    this.addLine('╚══════════════════════════════════════╝', 'system');
+    this.addBlank();
+  }
+
+  revealHint() {
+    const level = LEVELS[this.currentLevelIndex];
+    const id = level.id;
+    const revealed = this.hintsRevealed[id] || 0;
+
+    if (revealed >= 3) {
+      this.addLine('All hints already revealed!', 'dim');
+      // Show all hints again
+      level.hints.forEach((h, i) => {
+        const prefix = i === 2 ? 'ANSWER' : `Hint ${i + 1}`;
+        this.addLine(`  ${prefix}: ${h}`, 'hint');
+      });
+      return;
+    }
+
+    const attemptsForLevel = this.attempts[id] || 0;
+    if (attemptsForLevel < 1 && revealed === 0) {
+      this.addLine('Try at least once before asking for a hint!', 'dim');
+      return;
+    }
+
+    this.hintsRevealed[id] = revealed + 1;
+    const hintIndex = revealed;
+    const hint = level.hints[hintIndex];
+    const prefix = hintIndex === 2 ? 'ANSWER' : `Hint ${hintIndex + 1}`;
+
+    this.addBlank();
+    this.addLine(`💡 ${prefix}: ${hint}`, 'hint');
+    this.addBlank();
+
+    this.saveProgress();
+  }
+
+  resetLevel() {
+    const level = LEVELS[this.currentLevelIndex];
+    this.attempts[level.id] = 0;
+    this.hintsRevealed[level.id] = 0;
+    if (level.type === 'git') {
+      this.gitState = this.createInitialGitState();
+    }
+    this.clearTerminal();
+    this.addLine('[SYSTEM] Level reset.', 'dim');
+    this.addBlank();
+    this.loadLevel(this.currentLevelIndex);
+    this.saveProgress();
+  }
+
+  showLevels() {
+    this.addBlank();
+    const categories = getCategories();
+    for (const cat of categories) {
+      this.addLine(`  ── ${cat} ──`, 'level-header');
+      const levels = getLevelsByCategory(cat);
+      for (const l of levels) {
+        const completed = this.completedLevels.has(l.id);
+        const current = LEVELS[this.currentLevelIndex].id === l.id;
+        const marker = completed ? '✓' : current ? '>' : ' ';
+        const status = completed ? 'success' : current ? 'question' : 'dim';
+        this.addLine(`  ${marker} Level ${l.id}: ${l.title}`, status);
+      }
+    }
+    this.addBlank();
+    this.addLine('Type "level N" to jump to a level.', 'dim');
+    this.addBlank();
+  }
+
+  skipLevel() {
+    if (this.currentLevelIndex < LEVELS.length - 1) {
+      this.currentLevelIndex++;
+      this.addBlank();
+      this.addLine('[SYSTEM] Skipping to next level...', 'dim');
+      this.addBlank();
+      this.loadLevel(this.currentLevelIndex);
+      this.saveProgress();
+    } else {
+      this.addLine('You\'re on the last level!', 'dim');
+    }
+  }
+
+  jumpToLevel(num) {
+    const idx = LEVELS.findIndex(l => l.id === num);
+    if (idx === -1) {
+      this.addLine(`Level ${num} doesn't exist. Type 'levels' to see all levels.`, 'error');
+      return;
+    }
+    this.currentLevelIndex = idx;
+    this.clearTerminal();
+    this.loadLevel(this.currentLevelIndex);
+    this.saveProgress();
+  }
+
+  // ── JavaScript Execution ────────────────────────────────────
+
+  async executeJS(code, level) {
+    const result = await this.runInSandbox(code);
+
+    // Show console output
+    if (result.consoleLogs && result.consoleLogs.length > 0) {
+      for (const log of result.consoleLogs) {
+        this.addLine(log, 'output');
+      }
+    }
+
+    // Validate
+    const validation = level.validate(code, result);
+
+    if (validation.passed) {
+      this.onLevelPassed(level);
+    } else {
+      this.onLevelFailed(level, validation.feedback);
+    }
+  }
+
+  async runInSandbox(code, timeout = 3000) {
+    return new Promise((resolve) => {
+      let worker;
+      try {
+        worker = new Worker('/workers/sandbox-worker.js');
+      } catch (_) {
+        // Fallback: execute inline (less safe but works)
+        resolve(this.executeInline(code));
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        worker.terminate();
+        resolve({
+          variables: {},
+          functions: {},
+          consoleLogs: [],
+          errors: ['Code timed out — possible infinite loop. Check your loop conditions.'],
+          timeout: true
+        });
+      }, timeout);
+
+      worker.onmessage = (e) => {
+        clearTimeout(timer);
+        worker.terminate();
+        resolve(e.data);
+      };
+
+      worker.onerror = (e) => {
+        clearTimeout(timer);
+        worker.terminate();
+        resolve({
+          variables: {},
+          functions: {},
+          consoleLogs: [],
+          errors: [e.message || 'Execution error'],
+          timeout: false
+        });
+      };
+
+      worker.postMessage({ code, requestId: Date.now().toString() });
+    });
+  }
+
+  executeInline(code) {
+    // Fallback execution if Worker fails (e.g., file:// protocol)
+    const logs = [];
+    const mockConsole = {
+      log: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '))
+    };
+
+    try {
+      const names = new Set();
+      for (const m of code.matchAll(/(?:var|let|const)\s+([a-zA-Z_$]\w*)/g)) names.add(m[1]);
+      for (const m of code.matchAll(/function\s+([a-zA-Z_$]\w*)/g)) names.add(m[1]);
+
+      const captures = [...names].map(n =>
+        `try{__v["${n}"]=${n};__t["${n}"]=typeof ${n}}catch(_){}`
+      ).join(';');
+
+      const wrapped = `var console=arguments[0];${code};var __v={},__t={};${captures};return{v:__v,t:__t}`;
+      const fn = new Function(wrapped);
+      const r = fn(mockConsole);
+
+      const variables = {}, functions = {};
+      for (const k in r.v) {
+        if (r.t[k] === 'function') functions[k] = true;
+        else variables[k] = r.v[k];
+      }
+
+      return { variables, functions, consoleLogs: logs, errors: [], timeout: false };
+    } catch (e) {
+      return { variables: {}, functions: {}, consoleLogs: logs, errors: [e.message], timeout: false };
+    }
+  }
+
+  // ── Git Execution ───────────────────────────────────────────
+
+  async executeGit(command, level) {
+    if (!this.gitState) {
+      this.gitState = this.createInitialGitState();
+    }
+
+    // Parse the command
+    const result = this.executeGitCommand(command);
+
+    if (result.error) {
+      this.addLine(`error: ${result.error}`, 'error');
+    } else if (result.message) {
+      this.addLine(result.message, 'output');
+    }
+
+    // Validate current git state
+    const validation = level.validate(this.gitState);
+
+    if (validation.passed) {
+      this.onLevelPassed(level);
+    } else {
+      // Don't show failure for git levels on each command —
+      // just show the feedback as a guide for next steps
+      if (!result.error) {
+        this.addLine(validation.feedback, 'dim');
+      }
+    }
+  }
+
+  executeGitCommand(input) {
+    const trimmed = input.trim();
+    const parts = this.parseCommandParts(trimmed);
+
+    // Handle file creation: echo "content" > filename
+    if (trimmed.startsWith('echo ') || trimmed.includes('>')) {
+      return this.handleFileCreation(trimmed);
+    }
+
+    if (!trimmed.startsWith('git ')) {
+      return { error: 'Not a recognized command. Use git commands or echo to create files.' };
+    }
+
+    const gitParts = parts.slice(1); // Remove 'git'
+    const gitCmd = gitParts[0];
+    const args = gitParts.slice(1);
+
+    switch (gitCmd) {
+      case 'init': return this.gitInit();
+      case 'add': return this.gitAdd(args);
+      case 'commit': return this.gitCommit(args);
+      case 'branch': return this.gitBranch(args);
+      case 'checkout': return this.gitCheckout(args);
+      case 'status': return this.gitStatus();
+      case 'log': return this.gitLog();
+      default: return { error: `Unknown git command: ${gitCmd}` };
+    }
+  }
+
+  parseCommandParts(input) {
+    // Parse command respecting quoted strings
+    const parts = [];
+    let current = '';
+    let inQuote = false;
+    let quoteChar = '';
+
+    for (const char of input) {
+      if ((char === '"' || char === "'") && !inQuote) {
+        inQuote = true;
+        quoteChar = char;
+      } else if (char === quoteChar && inQuote) {
+        inQuote = false;
+      } else if (char === ' ' && !inQuote) {
+        if (current) parts.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    if (current) parts.push(current);
+    return parts;
+  }
+
+  createInitialGitState() {
+    return {
+      initialized: false,
+      HEAD: null,
+      currentBranch: null,
+      branches: {},
+      commits: [],
+      index: {},
+      workingDirectory: {},
+      _fileCreated: false,
+      _fileStaged: false,
+      _committed: false
+    };
+  }
+
+  gitInit() {
+    if (this.gitState.initialized) {
+      return { message: 'Reinitialized existing Git repository' };
+    }
+    this.gitState.initialized = true;
+    this.gitState.HEAD = 'refs/heads/main';
+    this.gitState.currentBranch = 'main';
+    this.gitState.branches = {
+      main: { name: 'main', commit: null, commits: [] }
+    };
+    this.gitState.commits = [];
+    this.gitState.index = {};
+    return { message: 'Initialized empty Git repository in .git/' };
+  }
+
+  gitAdd(args) {
+    if (!this.gitState.initialized) return { error: 'Not a git repository. Run "git init" first.' };
+    const file = args[0];
+    if (!file) return { error: 'No file specified. Usage: git add <filename>' };
+    if (file === '.') {
+      // Stage all files in working directory
+      const files = Object.keys(this.gitState.workingDirectory);
+      if (files.length === 0) return { error: 'Nothing to add.' };
+      for (const f of files) {
+        this.gitState.index[f] = this.gitState.workingDirectory[f];
+      }
+      this.gitState._fileStaged = true;
+      return { message: `Staged ${files.length} file(s)` };
+    }
+    if (!(file in this.gitState.workingDirectory)) return { error: `fatal: pathspec '${file}' did not match any files` };
+    this.gitState.index[file] = this.gitState.workingDirectory[file];
+    this.gitState._fileStaged = true;
+    return { message: `Staged '${file}'` };
+  }
+
+  gitCommit(args) {
+    if (!this.gitState.initialized) return { error: 'Not a git repository.' };
+
+    let message = '';
+    const mIndex = args.indexOf('-m');
+    if (mIndex !== -1 && args[mIndex + 1]) {
+      message = args[mIndex + 1];
+    } else {
+      return { error: 'Commit message required. Usage: git commit -m "message"' };
+    }
+
+    const stagedFiles = Object.keys(this.gitState.index);
+    if (stagedFiles.length === 0) return { error: 'Nothing to commit. Stage files with git add first.' };
+
+    const hash = Math.random().toString(36).substring(2, 9);
+    const branch = this.gitState.currentBranch || 'main';
+    const commit = {
+      hash,
+      message,
+      files: [...stagedFiles],
+      timestamp: Date.now(),
+      parent: this.gitState.branches[branch]?.commit || null
+    };
+
+    this.gitState.commits.unshift(commit);
+    this.gitState.branches[branch].commit = hash;
+    this.gitState.branches[branch].commits.push(hash);
+    this.gitState.index = {};
+    this.gitState._committed = true;
+
+    return { message: `[${branch} ${hash}] ${message}\n ${stagedFiles.length} file(s) changed` };
+  }
+
+  gitBranch(args) {
+    if (!this.gitState.initialized) return { error: 'Not a git repository.' };
+    if (!args[0]) {
+      // List branches
+      const branches = Object.keys(this.gitState.branches);
+      const lines = branches.map(b => `${b === this.gitState.currentBranch ? '* ' : '  '}${b}`);
+      return { message: lines.join('\n') };
+    }
+
+    const name = args[0];
+    if (this.gitState.branches[name]) return { error: `Branch '${name}' already exists.` };
+    if (this.gitState.commits.length === 0) return { error: 'Cannot create branch: no commits yet.' };
+
+    const currentCommit = this.gitState.branches[this.gitState.currentBranch]?.commit;
+    this.gitState.branches[name] = {
+      name,
+      commit: currentCommit,
+      commits: currentCommit ? [currentCommit] : []
+    };
+    return { message: `Created branch '${name}'` };
+  }
+
+  gitCheckout(args) {
+    if (!this.gitState.initialized) return { error: 'Not a git repository.' };
+    if (!args[0]) return { error: 'Branch name required.' };
+
+    if (args[0] === '-b') {
+      const name = args[1];
+      if (!name) return { error: 'Branch name required after -b.' };
+      if (this.gitState.commits.length === 0) return { error: 'Cannot create branch: no commits yet.' };
+      const branchResult = this.gitBranch([name]);
+      if (branchResult.error) return branchResult;
+      this.gitState.HEAD = `refs/heads/${name}`;
+      this.gitState.currentBranch = name;
+      return { message: `Switched to a new branch '${name}'` };
+    }
+
+    const target = args[0];
+    if (!this.gitState.branches[target]) return { error: `error: pathspec '${target}' did not match any branch.` };
+    this.gitState.HEAD = `refs/heads/${target}`;
+    this.gitState.currentBranch = target;
+    return { message: `Switched to branch '${target}'` };
+  }
+
+  gitStatus() {
+    if (!this.gitState.initialized) return { error: 'Not a git repository.' };
+    const staged = Object.keys(this.gitState.index);
+    const working = Object.keys(this.gitState.workingDirectory);
+    const unstaged = working.filter(f => !(f in this.gitState.index));
+
+    let msg = `On branch ${this.gitState.currentBranch}\n`;
+    if (staged.length > 0) {
+      msg += '\nChanges to be committed:\n';
+      staged.forEach(f => { msg += `  new file: ${f}\n`; });
+    }
+    if (unstaged.length > 0) {
+      msg += '\nUntracked files:\n';
+      unstaged.forEach(f => { msg += `  ${f}\n`; });
+    }
+    if (staged.length === 0 && unstaged.length === 0) {
+      msg += '\nNothing to commit, working tree clean';
+    }
+    return { message: msg };
+  }
+
+  gitLog() {
+    if (!this.gitState.initialized) return { error: 'Not a git repository.' };
+    if (this.gitState.commits.length === 0) return { message: 'No commits yet.' };
+    const lines = this.gitState.commits.map(c =>
+      `commit ${c.hash}\n  ${c.message}`
+    );
+    return { message: lines.join('\n\n') };
+  }
+
+  handleFileCreation(command) {
+    const match = command.match(/echo\s+["']?([^"'>]+)["']?\s*>\s*(\S+)/);
+    if (match) {
+      const content = match[1].trim();
+      const filename = match[2];
+      this.gitState.workingDirectory[filename] = content;
+      this.gitState._fileCreated = true;
+      return { message: `Created file '${filename}'` };
+    }
+    return { error: 'Invalid syntax. Use: echo "content" > filename' };
+  }
+
+  // ── Level Pass/Fail ─────────────────────────────────────────
+
+  onLevelPassed(level) {
+    this.addBlank();
+    this.addLine('╔══════════════════════════════════════╗', 'success');
+    this.addLine('║         ✓  LEVEL COMPLETE!          ║', 'success');
+    this.addLine('╚══════════════════════════════════════╝', 'success');
+    this.addBlank();
+    if (level.successMessage) {
+      this.addLine(level.successMessage, 'success-message');
+    }
+    this.addBlank();
+
+    // Mark as completed
+    this.completedLevels.add(level.id);
+    this.saveProgress();
+
+    // Check if game complete
+    if (this.completedLevels.size === TOTAL_LEVELS) {
+      this.showGameComplete();
+      return;
+    }
+
+    // Advance to next level
+    if (this.currentLevelIndex < LEVELS.length - 1) {
+      this.currentLevelIndex++;
+      this.saveProgress();
+      this.addLine('Loading next level...', 'dim');
+      this.addBlank();
 
       setTimeout(() => {
-        this.terminalInput?.focus();
-      }, 50);
+        this.loadLevel(this.currentLevelIndex);
+      }, 1500);
     }
   }
 
-  displayFeedback(result) {
-    if (!this.feedbackArea) return;
-    
-    const feedbackDiv = document.createElement('div');
-    feedbackDiv.className = `p-4 border rounded ${
-      result.passed 
-        ? 'bg-terminal-green/10 border-terminal-green/50' 
-        : 'bg-red-500/10 border-red-500/50'
-    }`;
+  onLevelFailed(level, feedback) {
+    const id = level.id;
+    this.attempts[id] = (this.attempts[id] || 0) + 1;
+    this.saveProgress();
 
-    const statusIcon = result.passed ? '✓' : '✗';
-    const statusColor = result.passed ? 'text-terminal-green' : 'text-red-400';
+    this.addLine(`✗ ${feedback}`, 'error');
 
-    feedbackDiv.innerHTML = `
-      <div class="flex items-start space-x-3">
-        <span class="text-2xl ${statusColor}">${statusIcon}</span>
-        <div class="flex-1">
-          <p class="text-sm ${result.passed ? 'text-terminal-green' : 'text-red-400'} font-semibold mb-1">
-            ${result.passed ? 'Success!' : 'Failed'}
-          </p>
-          <p class="text-sm text-terminal-green/80 mb-2">${this.escapeHtml(result.feedback || 'No feedback')}</p>
-          ${result.errors && result.errors.length > 0 ? `
-            <div class="mt-2 space-y-1">
-              ${result.errors.map(err => `<p class="text-xs text-red-400">• ${this.escapeHtml(err)}</p>`).join('')}
-            </div>
-          ` : ''}
-          ${result.hints && result.hints.length > 0 ? `
-            <div class="mt-2 pt-2 border-t border-terminal-border">
-              <p class="text-xs text-terminal-green/60 mb-1">Hints:</p>
-              ${result.hints.map(hint => `<p class="text-xs text-terminal-green/70">• ${this.escapeHtml(hint)}</p>`).join('')}
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-
-    this.feedbackArea.innerHTML = '';
-    this.feedbackArea.appendChild(feedbackDiv);
-
-    this.feedbackArea.scrollTop = 0;
-  }
-
-  displayConsoleOutput(logs) {
-    if (!this.consoleOutput) return;
-    
-    if (!logs || logs.length === 0) {
-      this.consoleOutput.innerHTML = '<div class="text-terminal-green/50">No output</div>';
-      return;
-    }
-
-    this.consoleOutput.innerHTML = logs
-      .map(log => `<div class="text-terminal-green/90">${this.escapeHtml(String(log))}</div>`)
-      .join('');
-
-    this.consoleOutput.scrollTop = this.consoleOutput.scrollHeight;
-  }
-
-  async handleLevelPassed() {
-    this.addOutput('✓ Level completed!', 'success');
-    
-    try {
-
-      const completionData = await this.levelManager.completeLevel(this.currentLevel);
-
-      const progress = await this.levelManager.storage.getUserProgress();
-      this.updateProgressDisplay(progress);
-
-      this.populateLevelSelector();
-
-      const config = this.levelManager.getLevelConfig(this.currentLevel);
-      if (config && config.unlocks && config.unlocks.length > 0) {
-        const nextLevel = config.unlocks[0];
-        if (nextLevel > this.currentLevel) {
-          this.currentLevel = nextLevel;
-          await this.loadLevelInfo(this.currentLevel);
-          this.levelSelector.value = this.currentLevel;
-          this.addOutput(`Level ${nextLevel} unlocked!`, 'system');
-        }
-      }
-    } catch (error) {
-      console.error('Error completing level:', error);
-      this.addOutput(`Error: ${error.message}`, 'error');
+    // Show hint availability
+    const hintsUsed = this.hintsRevealed[id] || 0;
+    if (hintsUsed < 3) {
+      this.addLine(`Type 'hint' for help (${hintsUsed}/3 hints revealed).`, 'dim');
     }
   }
 
-  handleLevelCompleted(eventData) {
+  // ── Game Complete ───────────────────────────────────────────
 
-    this.addOutput(`Level ${eventData.levelId} completed!`, 'success');
-  }
-
-  async loadLevelInfo(levelId) {
-    const config = this.levelManager.getLevelConfig(levelId);
-    
-    if (!config) {
-      if (this.levelTitle) this.levelTitle.textContent = `Level ${levelId}`;
-      if (this.levelDescription) this.levelDescription.textContent = 'Level configuration not found.';
-      if (this.levelObjective) this.levelObjective.textContent = 'N/A';
-      if (this.levelHints) this.levelHints.innerHTML = '<li>No hints available</li>';
-      return;
-    }
-
-    if (this.levelTitle) {
-      this.levelTitle.textContent = config.title || `Level ${levelId}`;
-      if (config.category) {
-        this.levelTitle.textContent += ` (${config.category})`;
-      }
-    }
-    if (this.levelDescription) {
-      this.levelDescription.textContent = config.description || 'Complete the challenge.';
-    }
-    if (this.levelObjective) {
-      this.levelObjective.textContent = config.description || 'Complete the challenge.';
-    }
-    if (this.currentLevelDisplay) {
-      this.currentLevelDisplay.textContent = levelId;
-    }
-
-    if (this.levelHints) {
-      if (config.hints && config.hints.length > 0) {
-        this.levelHints.innerHTML = config.hints
-          .map(hint => `<li class="text-terminal-green/70">${this.escapeHtml(hint)}</li>`)
-          .join('');
-      } else {
-        this.levelHints.innerHTML = '<li class="text-terminal-green/50">No hints available</li>';
-      }
-    }
-
-    this.levelManager.resetWorldState(levelId);
-
-    if (this.consoleOutput) {
-      this.consoleOutput.innerHTML = '<div class="text-terminal-green/50">No output yet...</div>';
-    }
-  }
-
-  updateProgressDisplay(progress) {
-    if (!progress) return;
-    
-    if (this.completedCount) {
-      this.completedCount.textContent = progress.completedLevels?.length || 0;
-    }
-
-    const totalLevels = 10; // Update this as you add more levels
-    const completed = progress.completedLevels?.length || 0;
-    const percentage = Math.min((completed / totalLevels) * 100, 100);
-    
-    if (this.progressBar) {
-      this.progressBar.style.width = `${percentage}%`;
-    }
-  }
-
-  addOutput(message, type = 'info') {
-    if (!this.terminalOutput) return;
-    
-    const outputDiv = document.createElement('div');
-    outputDiv.className = 'font-mono text-sm';
-    
-    let colorClass = 'text-terminal-green/80';
-    let prefix = '';
-    
-    switch (type) {
-      case 'command':
-        colorClass = 'text-terminal-green';
-        prefix = '';
-        break;
-      case 'success':
-        colorClass = 'text-terminal-green';
-        prefix = '✓ ';
-        break;
-      case 'error':
-        colorClass = 'text-red-400';
-        prefix = '✗ ';
-        break;
-      case 'hint':
-        colorClass = 'text-yellow-400';
-        prefix = '💡 ';
-        break;
-      case 'system':
-        colorClass = 'text-terminal-green/60';
-        prefix = '[SYSTEM] ';
-        break;
-    }
-    
-    outputDiv.className = `font-mono text-sm ${colorClass}`;
-    outputDiv.textContent = `${prefix}${message}`;
-    
-    this.terminalOutput.appendChild(outputDiv);
-
-    this.terminalOutput.scrollTop = this.terminalOutput.scrollHeight;
-  }
-
-  escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+  showGameComplete() {
+    this.addBlank();
+    const art = `
+  ╔═══════════════════════════════════════════════════╗
+  ║                                                   ║
+  ║     🎉  CONGRATULATIONS!  🎉                     ║
+  ║                                                   ║
+  ║     You've completed all ${TOTAL_LEVELS} levels!             ║
+  ║     You now know the fundamentals of              ║
+  ║     JavaScript and Git!                           ║
+  ║                                                   ║
+  ║     Keep coding. Keep building. Keep learning.    ║
+  ║                                                   ║
+  ╚═══════════════════════════════════════════════════╝`;
+    this.addHTML(`<pre class="completion-art">${art}</pre>`, 'success');
+    this.addBlank();
+    this.addLine('Type "levels" to replay any level, or "reset" to start fresh.', 'dim');
   }
 }
 
+// ── Bootstrap ─────────────────────────────────────────────────
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    new SudoSolveApp();
-  });
+  document.addEventListener('DOMContentLoaded', () => new SudoQuest());
 } else {
-  new SudoSolveApp();
+  new SudoQuest();
 }

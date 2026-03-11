@@ -1,133 +1,79 @@
-const EXECUTION_TIMEOUT = 2000;
+// Sandbox Web Worker for safe code execution
+// Captures variables, functions, and console.log output
 
-const shadowLogs = [];
-const originalConsoleLog = console.log;
-
-console.log = function(...args) {
-  shadowLogs.push(args.map(arg => 
-    typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-  ).join(' '));
-  originalConsoleLog.apply(console, args);
-};
-
-
-async function executeCodeEnhanced(userCode, timeout = EXECUTION_TIMEOUT) {
-  shadowLogs.length = 0;
-  
-  const worldState = {
-    variables: {},
-    functions: {},
-    consoleLogs: [],
-    errors: []
-  };
-
-  return new Promise((resolve) => {
-    const timeoutId = setTimeout(() => {
-      resolve({
-        ...worldState,
-        consoleLogs: [...shadowLogs],
-        errors: [...worldState.errors, 'Execution timeout: Code exceeded 2 second limit'],
-        timeout: true
-      });
-    }, timeout);
-
-    try {
-
-      const isolatedScope = {
-        console: {
-          log: function(...args) {
-            const logEntry = args.map(arg => {
-              if (typeof arg === 'object') {
-                try {
-                  return JSON.stringify(arg);
-                } catch {
-                  return '[Object]';
-                }
-              }
-              return String(arg);
-            }).join(' ');
-            shadowLogs.push(logEntry);
-          }
-        },
-        Math,
-        Date,
-        JSON,
-        Array,
-        Object,
-        String,
-        Number,
-        Boolean,
-        RegExp,
-        Error,
-        TypeError,
-        ReferenceError
-      };
-
-      const wrappedCode = `
-        (function(scope) {
-          with(scope) {
-            ${userCode}
-          }
-          return scope;
-        })({});
-      `;
-
-      const result = eval(wrappedCode);
-
-      Object.keys(result).forEach(key => {
-        if (typeof result[key] === 'function') {
-          worldState.functions[key] = result[key].toString();
-        } else if (!['console', 'Math', 'Date', 'JSON', 'Array', 'Object', 'String', 'Number', 'Boolean', 'RegExp', 'Error', 'TypeError', 'ReferenceError'].includes(key)) {
-          worldState.variables[key] = result[key];
-        }
-      });
-
-      clearTimeout(timeoutId);
-
-      resolve({
-        variables: worldState.variables,
-        functions: worldState.functions,
-        consoleLogs: [...shadowLogs],
-        errors: worldState.errors,
-        timeout: false
-      });
-    } catch (error) {
-      clearTimeout(timeoutId);
-      resolve({
-        variables: worldState.variables,
-        functions: worldState.functions,
-        consoleLogs: [...shadowLogs],
-        errors: [error.message],
-        timeout: false
-      });
-    }
-  });
-}
-
-self.addEventListener('message', async (event) => {
-  const { code, timeout, requestId } = event.data;
-
-  if (!code) {
-    self.postMessage({
-      requestId,
-      error: 'No code provided'
-    });
-    return;
-  }
+self.addEventListener('message', (event) => {
+  const { code, requestId } = event.data;
 
   try {
-    const result = await executeCodeEnhanced(code, timeout || EXECUTION_TIMEOUT);
+    // Parse all declared variable and function names from user code
+    const names = new Set();
+    for (const m of code.matchAll(/(?:var|let|const)\s+([a-zA-Z_$]\w*)/g)) {
+      names.add(m[1]);
+    }
+    for (const m of code.matchAll(/function\s+([a-zA-Z_$]\w*)/g)) {
+      names.add(m[1]);
+    }
+
+    // Build capture statements to extract values after execution
+    const captures = [...names].map(n =>
+      `try{__v["${n}"]=${n};__t["${n}"]=typeof ${n}}catch(_){}`
+    ).join(';');
+
+    // Wrap user code with console interception and variable capture
+    const wrapped = [
+      'var __l=[];',
+      'var console={',
+      '  log:function(){',
+      '    __l.push([].slice.call(arguments).map(function(a){',
+      '      if(a===null)return"null";',
+      '      if(a===undefined)return"undefined";',
+      '      if(typeof a==="object"){try{return JSON.stringify(a)}catch(_){return String(a)}}',
+      '      return String(a)',
+      '    }).join(" "))',
+      '  },',
+      '  warn:function(){},error:function(){},info:function(){}',
+      '};',
+      code,
+      ';var __v={},__t={};',
+      captures,
+      ';return{v:__v,t:__t,l:__l}'
+    ].join('\n');
+
+    const fn = new Function(wrapped);
+    const r = fn();
+
+    // Separate variables from functions
+    const variables = {};
+    const functions = {};
+    for (const k in r.v) {
+      if (r.t[k] === 'function') {
+        functions[k] = true;
+      } else {
+        try {
+          // Ensure values are serializable
+          JSON.stringify(r.v[k]);
+          variables[k] = r.v[k];
+        } catch (_) {
+          variables[k] = String(r.v[k]);
+        }
+      }
+    }
+
     self.postMessage({
       requestId,
-      ...result
+      variables,
+      functions,
+      consoleLogs: r.l,
+      errors: [],
+      timeout: false
     });
-  } catch (error) {
+  } catch (e) {
     self.postMessage({
       requestId,
       variables: {},
       functions: {},
       consoleLogs: [],
-      errors: [error.message],
+      errors: [e.message],
       timeout: false
     });
   }
