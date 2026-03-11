@@ -46,6 +46,15 @@ class SudoQuest {
     // CMD state (persists across commands within a cmd level)
     this.cmdState = null;
 
+    // Score & achievements
+    this.score = {};            // per-level score (100 base, -25 per hint)
+    this.personalBests = {};    // per-category best total times
+    this.achievements = new Set();
+    this.firstTryStreak = 0;
+
+    // Tab completion
+    this.tabCommands = ['hint','clear','reset','restart','levels','categories','skip','next','theme','help','explain','save','load','achievements','score'];
+
     // DOM elements
     this.output = document.getElementById('output');
     this.input = document.getElementById('input');
@@ -57,6 +66,12 @@ class SudoQuest {
     this.segmentTime = document.getElementById('segment-time');
     this.splitsList = document.getElementById('splits-list');
     this.toolbar = document.getElementById('action-toolbar');
+    this.scoreDisplay = document.getElementById('score-display');
+    this.achievementToast = document.getElementById('achievement-toast');
+    this.kbOverlay = document.getElementById('kb-overlay');
+    this.hamburger = document.getElementById('hamburger');
+    this.mobileDrawer = document.getElementById('mobile-drawer');
+    this.mobileOverlay = document.getElementById('mobile-overlay');
 
     if (!this.input || !this.output) {
       console.error('Required DOM elements not found');
@@ -123,13 +138,59 @@ class SudoQuest {
       });
     }
 
+    // Tab completion
+    this.input.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        this.handleTabComplete();
+      }
+    });
+
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.key === 'l') {
         e.preventDefault();
         this.clearTerminal();
         if (this.gameStarted) this.loadLevel(this.currentLevelIndex, true);
       }
+      // Ctrl+/ or ? for keyboard overlay
+      if (e.ctrlKey && e.key === '/') {
+        e.preventDefault();
+        this.toggleKbOverlay();
+      }
+      if (e.key === 'Escape' && this.kbOverlay && !this.kbOverlay.hidden) {
+        this.kbOverlay.hidden = true;
+      }
+      if (e.key === 'Escape' && this.mobileDrawer?.classList.contains('open')) {
+        this.closeMobileDrawer();
+      }
     });
+
+    // Keyboard overlay click-to-close
+    if (this.kbOverlay) {
+      this.kbOverlay.addEventListener('click', (e) => {
+        if (e.target === this.kbOverlay) this.kbOverlay.hidden = true;
+      });
+    }
+
+    // Mobile hamburger
+    if (this.hamburger) {
+      this.hamburger.addEventListener('click', () => this.toggleMobileDrawer());
+    }
+    if (this.mobileOverlay) {
+      this.mobileOverlay.addEventListener('click', () => this.closeMobileDrawer());
+    }
+    if (this.mobileDrawer) {
+      this.mobileDrawer.addEventListener('click', (e) => {
+        const btn = e.target.closest('.drawer-btn');
+        if (!btn) return;
+        const cmd = btn.dataset.cmd;
+        if (cmd && !this.isExecuting) {
+          this.closeMobileDrawer();
+          this.addLine(`$ ${cmd}`, 'command');
+          this.handleSpecialCommand(cmd);
+        }
+      });
+    }
   }
 
   // ── Ready Screen ──────────────────────────────────────────
@@ -213,7 +274,10 @@ class SudoQuest {
       hintsRevealed: this.hintsRevealed,
       levelTimes: this.levelTimes,
       currentCategory: this.currentCategory,
-      gameStarted: this.gameStarted
+      gameStarted: this.gameStarted,
+      score: this.score,
+      personalBests: this.personalBests,
+      achievements: [...this.achievements]
     };
     try {
       localStorage.setItem('sudoquest_progress', JSON.stringify(data));
@@ -231,6 +295,9 @@ class SudoQuest {
         this.levelTimes = data.levelTimes || {};
         this.currentCategory = data.currentCategory || null;
         this.gameStarted = data.gameStarted || false;
+        this.score = data.score || {};
+        this.personalBests = data.personalBests || {};
+        this.achievements = new Set(data.achievements || []);
       }
     } catch (_) {}
   }
@@ -291,11 +358,17 @@ class SudoQuest {
     this.updateHeader(level);
     this.renderSplits();
 
+    // Init score for this level
+    if (!this.score[level.id]) this.score[level.id] = 100;
+    this.updateScoreDisplay(level.id);
+
     if (!quiet) {
       const bar = '\u2550'.repeat(56);
+      const stars = this.getDifficulty(index, this.levels.length);
+      const diffLabel = ['Easy','Medium','Hard'][stars - 1];
       this.addLine(`\u2554${bar}\u2557`, 'level-header');
       const title = `  LEVEL ${level.id}: ${level.title}`;
-      const cat = `  Category: ${level.category}`;
+      const cat = `  Category: ${level.category}  |  ${'\u2605'.repeat(stars)} ${diffLabel}`;
       this.addLine(`\u2551${title.padEnd(56)}\u2551`, 'level-header');
       this.addLine(`\u2551${cat.padEnd(56)}\u2551`, 'level-header');
       this.addLine(`\u255A${bar}\u255D`, 'level-header');
@@ -404,6 +477,11 @@ class SudoQuest {
       categories: () => { this.gameStarted = false; this.showCategoryScreen(); },
       skip: () => this.skipLevel(),
       next: () => this.skipLevel(),
+      explain: () => this.showExplain(),
+      save: () => this.exportProgress(),
+      achievements: () => this.showAchievements(),
+      score: () => this.showScore(),
+      '?': () => this.toggleKbOverlay(),
     };
 
     if (commands[cmd]) { commands[cmd](); return true; }
@@ -414,6 +492,10 @@ class SudoQuest {
     }
     if (cmd === 'theme' || cmd.startsWith('theme ')) {
       this.handleThemeCommand(cmd.slice(5).trim());
+      return true;
+    }
+    if (cmd.startsWith('load ')) {
+      this.importProgress(cmd.slice(5).trim());
       return true;
     }
     return false;
@@ -427,16 +509,22 @@ class SudoQuest {
     this.addLine('\u2551          AVAILABLE COMMANDS          \u2551', 'system');
     this.addLine('\u2560\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2563', 'system');
     const cmds = [
-      ['hint',       'Reveal next hint'],
-      ['clear',      'Clear terminal'],
-      ['reset',      'Reset current level'],
-      ['restart',    'Restart timer & questions'],
-      ['levels',     'Show all levels'],
-      ['categories', 'Pick a new category'],
-      ['level N',    'Jump to level N'],
-      ['skip',       'Skip to next level'],
-      ['theme',      'Change color theme'],
-      ['help',       'Show this help'],
+      ['hint',         'Reveal next hint (-25 pts)'],
+      ['explain',      'Concept deep-dive'],
+      ['clear',        'Clear terminal'],
+      ['reset',        'Reset current level'],
+      ['restart',      'Restart everything'],
+      ['levels',       'Show all levels'],
+      ['categories',   'Pick a new category'],
+      ['level N',      'Jump to level N'],
+      ['skip',         'Skip to next level'],
+      ['theme',        'Change color theme'],
+      ['save',         'Export progress'],
+      ['load <data>',  'Import progress'],
+      ['achievements', 'View badges'],
+      ['score',        'Score summary'],
+      ['?',            'Keyboard shortcuts'],
+      ['help',         'Show this help'],
     ];
     cmds.forEach(([c, d]) => {
       this.addLine(`\u2551  ${c.padEnd(12)}\u2014 ${d.padEnd(22)}\u2551`, 'system');
@@ -503,9 +591,15 @@ class SudoQuest {
     }
 
     this.hintsRevealed[id] = revealed + 1;
+    // Deduct score for hint
+    if (!this.score[id]) this.score[id] = 100;
+    this.score[id] = Math.max(0, this.score[id] - 25);
+    this.updateScoreDisplay(id);
+
     const prefix = revealed === 2 ? 'ANSWER' : `Hint ${revealed + 1}`;
     this.addBlank();
     this.addLine(`\uD83D\uDCA1 ${prefix}: ${level.hints[revealed]}`, 'hint');
+    this.addLine(`  Score: ${this.score[id]} pts (-25 for hint)`, 'dim');
     this.addBlank();
     this.saveProgress();
   }
@@ -540,6 +634,8 @@ class SudoQuest {
     this.gameStarted = false;
     this.sessionStartTime = null;
     this.levelStartTime = null;
+    this.score = {};
+    this.firstTryStreak = 0;
 
     // Reset display
     if (this.timerClock) this.timerClock.textContent = '0:00.00';
@@ -1155,12 +1251,26 @@ class SudoQuest {
   // ── Level Pass/Fail ─────────────────────────────────────────
 
   onLevelPassed(level) {
+    const id = level.id;
+
+    // Finalize score
+    if (!this.score[id]) this.score[id] = 100;
+    const pts = this.score[id];
+
+    // Track first-try streak
+    if ((this.attempts[id] || 0) === 0 && (this.hintsRevealed[id] || 0) === 0) {
+      this.firstTryStreak++;
+    } else {
+      this.firstTryStreak = 0;
+    }
+
     this.addBlank();
     this.addLine('\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557', 'success');
-    this.addLine('\u2551         \u2713  LEVEL COMPLETE!          \u2551', 'success');
+    this.addLine(`\u2551    \u2713  LEVEL COMPLETE!  (${pts} pts)     \u2551`, 'success');
     this.addLine('\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D', 'success');
     this.addBlank();
     if (level.successMessage) this.addLine(level.successMessage, 'success-message');
+    this.addLine('Type "explain" for a deeper dive on this concept.', 'dim');
     this.addBlank();
 
     // Record time
@@ -1170,9 +1280,13 @@ class SudoQuest {
     this.completedLevels.add(level.id);
     this.saveProgress();
 
+    // Check achievements
+    this.checkAchievements();
+
     // Check category complete
     const allDone = this.levels.every(l => this.completedLevels.has(l.id));
     if (allDone) {
+      this.updatePersonalBest();
       this.showCategoryComplete();
       return;
     }
@@ -1257,13 +1371,19 @@ class SudoQuest {
       name.textContent = level.title;
       name.title = `Level ${level.id}: ${level.title}`;
 
+      const diff = document.createElement('span');
+      diff.className = 'split-difficulty';
+      const stars = this.getDifficulty(i, this.levels.length);
+      diff.textContent = '\u2605'.repeat(stars);
+      diff.title = ['Easy','Medium','Hard'][stars - 1];
+
       const time = document.createElement('span');
       time.className = `split-time${done ? ' completed' : active ? ' active' : ' pending'}`;
       time.textContent = done && this.levelTimes[level.id]
         ? this.formatTime(this.levelTimes[level.id])
         : active ? '--:--.--' : '';
 
-      row.append(icon, name, time);
+      row.append(icon, name, diff, time);
       frag.appendChild(row);
     });
 
@@ -1274,6 +1394,244 @@ class SudoQuest {
     if (activeRow) activeRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
+  // ── Difficulty ─────────────────────────────────────────────
+
+  getDifficulty(levelIndex, totalLevels) {
+    const third = totalLevels / 3;
+    if (levelIndex < third) return 1;
+    if (levelIndex < third * 2) return 2;
+    return 3;
+  }
+
+  // ── Score Display ─────────────────────────────────────────
+
+  updateScoreDisplay(levelId) {
+    if (this.scoreDisplay) {
+      const pts = this.score[levelId] ?? 100;
+      this.scoreDisplay.textContent = `${pts}pts`;
+    }
+  }
+
+  showScore() {
+    this.addBlank();
+    this.addLine('Score Summary:', 'system');
+    let total = 0, count = 0;
+    for (const l of this.levels) {
+      if (this.completedLevels.has(l.id)) {
+        const pts = this.score[l.id] ?? 100;
+        total += pts;
+        count++;
+      }
+    }
+    this.addLine(`  Levels completed: ${count}/${this.levels.length}`, 'system');
+    this.addLine(`  Total score: ${total} pts`, 'system');
+    if (count > 0) this.addLine(`  Average: ${Math.round(total / count)} pts/level`, 'system');
+    const pb = this.personalBests[this.currentCategory];
+    if (pb) this.addLine(`  Personal best: ${this.formatTime(pb)}`, 'system');
+    this.addBlank();
+  }
+
+  // ── Explain Command ───────────────────────────────────────
+
+  showExplain() {
+    // Show explanation for the most recently completed level or current level
+    const idx = this.currentLevelIndex;
+    // Check previous level (just completed) first
+    const prevLevel = idx > 0 ? this.levels[idx - 1] : null;
+    const level = (prevLevel && this.completedLevels.has(prevLevel.id)) ? prevLevel : this.levels[idx];
+    if (!level) return;
+
+    this.addBlank();
+    this.addLine(`\u2550\u2550 ${level.title} \u2550\u2550`, 'system');
+    this.addBlank();
+    if (level.successMessage) {
+      this.addLine(level.successMessage, 'success-message');
+    } else {
+      this.addLine('No additional explanation available for this level.', 'dim');
+    }
+    this.addBlank();
+  }
+
+  // ── Tab Completion ────────────────────────────────────────
+
+  handleTabComplete() {
+    const val = this.input.value.trim().toLowerCase();
+    if (!val) return;
+    const matches = this.tabCommands.filter(c => c.startsWith(val));
+    if (matches.length === 1) {
+      this.input.value = matches[0];
+    } else if (matches.length > 1) {
+      this.addLine(`$ ${val}`, 'command');
+      this.addLine(matches.join('  '), 'dim');
+    }
+  }
+
+  // ── Keyboard Overlay ──────────────────────────────────────
+
+  toggleKbOverlay() {
+    if (this.kbOverlay) {
+      this.kbOverlay.hidden = !this.kbOverlay.hidden;
+    }
+  }
+
+  // ── Mobile Drawer ─────────────────────────────────────────
+
+  toggleMobileDrawer() {
+    if (!this.mobileDrawer) return;
+    const open = this.mobileDrawer.classList.contains('open');
+    if (open) this.closeMobileDrawer();
+    else this.openMobileDrawer();
+  }
+
+  openMobileDrawer() {
+    if (this.mobileDrawer) {
+      this.mobileDrawer.hidden = false;
+      if (this.mobileOverlay) this.mobileOverlay.hidden = false;
+      requestAnimationFrame(() => this.mobileDrawer.classList.add('open'));
+    }
+  }
+
+  closeMobileDrawer() {
+    if (this.mobileDrawer) {
+      this.mobileDrawer.classList.remove('open');
+      setTimeout(() => {
+        this.mobileDrawer.hidden = true;
+        if (this.mobileOverlay) this.mobileOverlay.hidden = true;
+      }, 250);
+    }
+  }
+
+  // ── Export/Import Progress ────────────────────────────────
+
+  exportProgress() {
+    try {
+      const raw = localStorage.getItem('sudoquest_progress');
+      if (!raw) { this.addLine('No progress to export.', 'dim'); return; }
+      const encoded = btoa(raw);
+      navigator.clipboard.writeText(encoded).then(() => {
+        this.addLine('Progress copied to clipboard!', 'success');
+        this.addLine('Use "load <data>" to import on another device.', 'dim');
+      }).catch(() => {
+        this.addLine('Progress string (copy manually):', 'system');
+        this.addLine(encoded, 'output');
+      });
+    } catch (_) {
+      this.addLine('Failed to export progress.', 'error');
+    }
+  }
+
+  importProgress(data) {
+    try {
+      const raw = atob(data);
+      const parsed = JSON.parse(raw);
+      if (!parsed.completedLevels) throw new Error('Invalid data');
+      localStorage.setItem('sudoquest_progress', raw);
+      this.loadProgress();
+      if (this.currentCategory) {
+        this.levels = getLevelsForCategory(this.currentCategory);
+        this.renderSplits();
+      }
+      this.addLine('Progress imported successfully! Reload to apply fully.', 'success');
+    } catch (_) {
+      this.addLine('Invalid progress data. Make sure you pasted the full string.', 'error');
+    }
+  }
+
+  // ── Personal Best ─────────────────────────────────────────
+
+  updatePersonalBest() {
+    if (!this.currentCategory || !this.sessionStartTime) return;
+    const totalTime = Date.now() - this.sessionStartTime;
+    const prev = this.personalBests[this.currentCategory];
+    if (!prev || totalTime < prev) {
+      this.personalBests[this.currentCategory] = totalTime;
+      this.saveProgress();
+      if (prev) {
+        this.addLine(`NEW PERSONAL BEST! ${this.formatTime(totalTime)} (was ${this.formatTime(prev)})`, 'success');
+      }
+    }
+  }
+
+  // ── Achievement System ────────────────────────────────────
+
+  checkAchievements() {
+    const defs = [
+      { key: 'js_master', title: 'JS Master', desc: 'Complete all JavaScript levels', icon: '\uD83C\uDFC6',
+        check: () => this.isCategoryDone('js') },
+      { key: 'git_master', title: 'Git Guru', desc: 'Complete all Git levels', icon: '\uD83C\uDFC6',
+        check: () => this.isCategoryDone('git') },
+      { key: 'cmd_master', title: 'Terminal Pro', desc: 'Complete all Terminal levels', icon: '\uD83C\uDFC6',
+        check: () => this.isCategoryDone('cmd') },
+      { key: 'html_master', title: 'HTML Hero', desc: 'Complete all HTML levels', icon: '\uD83C\uDFC6',
+        check: () => this.isCategoryDone('html') },
+      { key: 'css_master', title: 'CSS Wizard', desc: 'Complete all CSS levels', icon: '\uD83C\uDFC6',
+        check: () => this.isCategoryDone('css') },
+      { key: 'csharp_master', title: 'C# Champion', desc: 'Complete all C# levels', icon: '\uD83C\uDFC6',
+        check: () => this.isCategoryDone('csharp') },
+      { key: 'speed_demon', title: 'Speed Demon', desc: 'Complete a category under 10 min', icon: '\u26A1',
+        check: () => Object.values(this.personalBests).some(t => t < 600000) },
+      { key: 'no_hints', title: 'Solo Solver', desc: 'Complete a category without hints', icon: '\uD83E\uDDE0',
+        check: () => this.levels.every(l => this.completedLevels.has(l.id)) && this.levels.every(l => !(this.hintsRevealed[l.id])) },
+      { key: 'streak_5', title: 'On Fire!', desc: '5 levels in a row on first try', icon: '\uD83D\uDD25',
+        check: () => this.firstTryStreak >= 5 },
+      { key: 'perfectionist', title: 'Perfectionist', desc: 'Score 100 on 10 levels', icon: '\uD83D\uDCAF',
+        check: () => Object.values(this.score).filter(s => s === 100).length >= 10 },
+      { key: 'completionist', title: 'Completionist', desc: 'Complete all 210 levels', icon: '\uD83C\uDF1F',
+        check: () => this.completedLevels.size >= 210 },
+    ];
+
+    for (const def of defs) {
+      if (this.achievements.has(def.key)) continue;
+      if (def.check()) {
+        this.achievements.add(def.key);
+        this.saveProgress();
+        this.showAchievementToast(def);
+      }
+    }
+  }
+
+  isCategoryDone(key) {
+    const cat = getCategoryByKey(key);
+    return cat && cat.levels.every(l => this.completedLevels.has(l.id));
+  }
+
+  showAchievementToast(def) {
+    if (!this.achievementToast) return;
+    const el = document.createElement('div');
+    el.className = 'achievement-badge';
+    el.innerHTML = `<span class="badge-icon">${def.icon}</span><div class="badge-text"><span class="badge-title">${def.title}</span><span class="badge-desc">${def.desc}</span></div>`;
+    this.achievementToast.appendChild(el);
+    setTimeout(() => el.remove(), 4200);
+  }
+
+  showAchievements() {
+    this.addBlank();
+    this.addLine('\u2550\u2550 Achievements \u2550\u2550', 'system');
+    this.addBlank();
+    const allDefs = [
+      { key: 'js_master', title: 'JS Master', desc: 'Complete all JavaScript levels', icon: '\uD83C\uDFC6' },
+      { key: 'git_master', title: 'Git Guru', desc: 'Complete all Git levels', icon: '\uD83C\uDFC6' },
+      { key: 'cmd_master', title: 'Terminal Pro', desc: 'Complete all Terminal levels', icon: '\uD83C\uDFC6' },
+      { key: 'html_master', title: 'HTML Hero', desc: 'Complete all HTML levels', icon: '\uD83C\uDFC6' },
+      { key: 'css_master', title: 'CSS Wizard', desc: 'Complete all CSS levels', icon: '\uD83C\uDFC6' },
+      { key: 'csharp_master', title: 'C# Champion', desc: 'Complete all C# levels', icon: '\uD83C\uDFC6' },
+      { key: 'speed_demon', title: 'Speed Demon', desc: 'Complete a category under 10 min', icon: '\u26A1' },
+      { key: 'no_hints', title: 'Solo Solver', desc: 'Complete a category without hints', icon: '\uD83E\uDDE0' },
+      { key: 'streak_5', title: 'On Fire!', desc: '5 levels in a row on first try', icon: '\uD83D\uDD25' },
+      { key: 'perfectionist', title: 'Perfectionist', desc: 'Score 100 on 10 levels', icon: '\uD83D\uDCAF' },
+      { key: 'completionist', title: 'Completionist', desc: 'Complete all 210 levels', icon: '\uD83C\uDF1F' },
+    ];
+    for (const d of allDefs) {
+      const earned = this.achievements.has(d.key);
+      const mark = earned ? '\u2713' : '\u25CB';
+      const type = earned ? 'success' : 'dim';
+      this.addLine(`  ${mark} ${d.icon} ${d.title} \u2014 ${d.desc}`, type);
+    }
+    this.addBlank();
+    this.addLine(`  ${this.achievements.size}/${allDefs.length} unlocked`, 'system');
+    this.addBlank();
+  }
+
   // ── Category Complete ──────────────────────────────────────
 
   showCategoryComplete() {
@@ -1281,12 +1639,19 @@ class SudoQuest {
     this.timerRunning = false;
 
     const totalTime = this.sessionStartTime ? Date.now() - this.sessionStartTime : 0;
+    let totalScore = 0;
+    for (const l of this.levels) totalScore += (this.score[l.id] ?? 100);
+    const pb = this.personalBests[this.currentCategory];
+    const pbLine = pb ? `     Personal best: ${this.formatTime(pb).padEnd(28)}\u2551` : `${''.padEnd(51)}\u2551`;
+
     this.addBlank();
     const art = `
   \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557
   \u2551                                                   \u2551
   \u2551     CATEGORY COMPLETE!                            \u2551
   \u2551     Total time: ${this.formatTime(totalTime).padEnd(33)}\u2551
+  \u2551     Score: ${String(totalScore).padEnd(38)}\u2551
+  \u2551${pbLine}
   \u2551                                                   \u2551
   \u2551     Type "categories" to try another track.       \u2551
   \u2551     Type "restart" to reset everything.           \u2551

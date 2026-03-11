@@ -21,10 +21,12 @@
         <span id="category-display" class="category-badge">Basics</span>
       </div>
       <div class="header-right">
+        <span id="score-display" class="score-text" title="Level score">100pts</span>
         <span id="level-indicator" class="level-text">Level 1/30</span>
         <div class="progress-bar">
           <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
         </div>
+        <button class="hamburger" id="hamburger" aria-label="Menu">&#9776;</button>
       </div>
     </header>
 
@@ -114,6 +116,47 @@
       <span>•</span>
       <span>Type <strong>theme</strong> to customize</span>
     </footer>
+  </div>
+
+  <!-- Achievement toast container -->
+  <div id="achievement-toast" class="achievement-toast"></div>
+
+  <!-- Keyboard shortcut overlay -->
+  <div id="kb-overlay" class="kb-overlay" hidden>
+    <div class="kb-card">
+      <div class="kb-title">Keyboard Shortcuts</div>
+      <div class="kb-row"><kbd>Enter</kbd><span>Run code</span></div>
+      <div class="kb-row"><kbd>Shift+Enter</kbd><span>New line</span></div>
+      <div class="kb-row"><kbd>Ctrl+L</kbd><span>Clear terminal</span></div>
+      <div class="kb-row"><kbd>Ctrl+/</kbd><span>This overlay</span></div>
+      <div class="kb-row"><kbd>Tab</kbd><span>Autocomplete command</span></div>
+      <div class="kb-row"><kbd>&uarr; / &darr;</kbd><span>Command history</span></div>
+      <div class="kb-sep"></div>
+      <div class="kb-label">Commands</div>
+      <div class="kb-row"><kbd>hint</kbd><span>Reveal a hint (-25 pts)</span></div>
+      <div class="kb-row"><kbd>explain</kbd><span>Deeper concept explanation</span></div>
+      <div class="kb-row"><kbd>save</kbd><span>Export progress to clipboard</span></div>
+      <div class="kb-row"><kbd>load</kbd><span>Import progress string</span></div>
+      <div class="kb-row"><kbd>achievements</kbd><span>View earned badges</span></div>
+      <div class="kb-row"><kbd>score</kbd><span>View score summary</span></div>
+      <div class="kb-footer">Press Esc or Ctrl+/ to close</div>
+    </div>
+  </div>
+
+  <!-- Mobile drawer -->
+  <div id="mobile-overlay" class="mobile-overlay" hidden></div>
+  <div id="mobile-drawer" class="mobile-drawer" hidden>
+    <div class="drawer-handle"></div>
+    <div class="drawer-grid">
+      <button class="drawer-btn" data-cmd="hint"><span>?</span>Hint</button>
+      <button class="drawer-btn" data-cmd="skip"><span>&raquo;</span>Skip</button>
+      <button class="drawer-btn" data-cmd="reset"><span>&orarr;</span>Reset</button>
+      <button class="drawer-btn" data-cmd="categories"><span>&equiv;</span>Menu</button>
+      <button class="drawer-btn" data-cmd="theme"><span>&cir;</span>Theme</button>
+      <button class="drawer-btn" data-cmd="help"><span>i</span>Help</button>
+      <button class="drawer-btn" data-cmd="achievements"><span>&#9733;</span>Badges</button>
+      <button class="drawer-btn" data-cmd="score"><span>#</span>Score</button>
+    </div>
   </div>
 
   <script type="module" src="/js/app.js"></script>
