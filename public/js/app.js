@@ -65,6 +65,7 @@ class SudoQuest {
     this.timerClock = document.getElementById('timer-clock');
     this.segmentTime = document.getElementById('segment-time');
     this.splitsList = document.getElementById('splits-list');
+    this.timerSidebar = document.getElementById('timer-sidebar');
     this.toolbar = document.getElementById('action-toolbar');
     this.scoreDisplay = document.getElementById('score-display');
     this.achievementToast = document.getElementById('achievement-toast');
@@ -90,10 +91,12 @@ class SudoQuest {
     this.setupTimerDisplay();
     if (this.gameStarted && this.currentCategory) {
       this.levels = getLevelsForCategory(this.currentCategory);
+      this.showTimerSidebar(true);
       this.startTimer();
       this.renderSplits();
       this.loadLevel(this.currentLevelIndex);
     } else {
+      this.showTimerSidebar(false);
       this.showReadyScreen();
     }
   }
@@ -251,6 +254,7 @@ class SudoQuest {
 
       // Reset timer for new category
       this.levelTimes = {};
+      this.showTimerSidebar(true);
       this.startTimer();
       this.renderSplits();
       this.clearTerminal();
@@ -474,7 +478,7 @@ class SudoQuest {
       reset: () => this.resetLevel(),
       restart: () => this.restartGame(),
       levels: () => this.showLevels(),
-      categories: () => { this.gameStarted = false; this.showCategoryScreen(); },
+      categories: () => { this.gameStarted = false; this.showTimerSidebar(false); this.showCategoryScreen(); },
       skip: () => this.skipLevel(),
       next: () => this.skipLevel(),
       explain: () => this.showExplain(),
@@ -643,6 +647,7 @@ class SudoQuest {
     if (this.splitsList) this.splitsList.innerHTML = '';
     if (this.progressFill) this.progressFill.style.width = '0%';
 
+    this.showTimerSidebar(false);
     this.saveProgress();
     this.showReadyScreen();
   }
@@ -1464,6 +1469,12 @@ class SudoQuest {
       this.addLine(`$ ${val}`, 'command');
       this.addLine(matches.join('  '), 'dim');
     }
+  }
+
+  // ── Timer Sidebar Visibility ─────────────────────────────
+
+  showTimerSidebar(visible) {
+    if (this.timerSidebar) this.timerSidebar.style.display = visible ? '' : 'none';
   }
 
   // ── Keyboard Overlay ──────────────────────────────────────

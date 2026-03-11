@@ -791,6 +791,10 @@ html, body {
   z-index: 200;
 }
 
+.kb-overlay[hidden] {
+  display: none;
+}
+
 .kb-card {
   background: var(--bg-terminal);
   border: 1px solid var(--border);
