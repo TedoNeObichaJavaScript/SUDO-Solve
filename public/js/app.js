@@ -1879,6 +1879,18 @@ class SudoQuest {
     this.sandboxCategory = null;
     this.sandboxLessonIndex = 0;
     this.sandboxConceptIndex = 0;
+
+    // Pause timer while in sandbox
+    if (this.timerRunning) {
+      this.timerPausedBySandbox = true;
+      this.timerRunning = false;
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.timerInterval = null;
+      // Save elapsed time so we can resume later
+      this.timerElapsedBeforeSandbox = Date.now() - this.sessionStartTime;
+      this.levelElapsedBeforeSandbox = Date.now() - this.levelStartTime;
+    }
+
     this.clearTerminal();
 
     const art = `
@@ -1912,6 +1924,16 @@ class SudoQuest {
     if (lower === 'exit' || lower === 'quit' || lower === 'q' || lower === 'back') {
       this.sandboxMode = false;
       this.sandboxCategory = null;
+
+      // Resume timer if it was paused by sandbox
+      if (this.timerPausedBySandbox) {
+        this.timerPausedBySandbox = false;
+        this.sessionStartTime = Date.now() - this.timerElapsedBeforeSandbox;
+        this.levelStartTime = Date.now() - this.levelElapsedBeforeSandbox;
+        this.timerRunning = true;
+        this.timerInterval = setInterval(() => this.updateTimerDisplay(), 50);
+      }
+
       this.clearTerminal();
       if (this.gameStarted && this.currentCategory) {
         this.loadLevel(this.currentLevelIndex);
