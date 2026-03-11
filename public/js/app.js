@@ -4,6 +4,190 @@
 
 import { CATEGORIES, getCategoryByKey, getLevelsForCategory } from './levels.js';
 
+// ── Sound System (Web Audio API) ─────────────────────────────
+
+class SoundManager {
+  constructor() {
+    this.ctx = null;
+    this.enabled = true;
+    try {
+      const saved = localStorage.getItem('sudoquest_sound');
+      if (saved === 'off') this.enabled = false;
+    } catch (_) {}
+  }
+
+  getCtx() {
+    if (!this.ctx) {
+      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (_) { this.enabled = false; }
+    }
+    return this.ctx;
+  }
+
+  toggle() {
+    this.enabled = !this.enabled;
+    try { localStorage.setItem('sudoquest_sound', this.enabled ? 'on' : 'off'); } catch (_) {}
+    return this.enabled;
+  }
+
+  playNote(freq, duration, startTime, gain = 0.15, type = 'sine') {
+    const ctx = this.getCtx();
+    if (!ctx || !this.enabled) return;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(gain, startTime);
+    g.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+  }
+
+  playLevelComplete() {
+    const ctx = this.getCtx();
+    if (!ctx || !this.enabled) return;
+    const t = ctx.currentTime;
+    // Ascending 3-note chime: C5 - E5 - G5
+    this.playNote(523.25, 0.15, t, 0.12);
+    this.playNote(659.25, 0.15, t + 0.12, 0.12);
+    this.playNote(783.99, 0.25, t + 0.24, 0.15);
+  }
+
+  playCategoryComplete() {
+    const ctx = this.getCtx();
+    if (!ctx || !this.enabled) return;
+    const t = ctx.currentTime;
+    // Triumphant fanfare: C5 - E5 - G5 - C6
+    this.playNote(523.25, 0.18, t, 0.12);
+    this.playNote(659.25, 0.18, t + 0.15, 0.12);
+    this.playNote(783.99, 0.18, t + 0.30, 0.14);
+    this.playNote(1046.50, 0.4, t + 0.45, 0.16);
+    // Harmony
+    this.playNote(523.25, 0.35, t + 0.45, 0.06, 'triangle');
+  }
+
+  playAchievement() {
+    const ctx = this.getCtx();
+    if (!ctx || !this.enabled) return;
+    const t = ctx.currentTime;
+    // Sparkle: quick rising arpeggio
+    [523, 659, 784, 1047, 1319].forEach((f, i) => {
+      this.playNote(f, 0.12, t + i * 0.07, 0.08, 'triangle');
+    });
+  }
+
+  playError() {
+    const ctx = this.getCtx();
+    if (!ctx || !this.enabled) return;
+    const t = ctx.currentTime;
+    // Low buzz
+    this.playNote(180, 0.15, t, 0.08, 'sawtooth');
+  }
+}
+
+const sound = new SoundManager();
+
+// ── Learning Sandbox Curriculum ──────────────────────────────
+
+const SANDBOX_LESSONS = {
+  js: [
+    { title: 'Variables & Data Types', concepts: [
+      { name: 'console.log()', desc: 'Prints output to the terminal. Your main debugging tool.', example: 'console.log("Hello, World!")' },
+      { name: 'Variables (let / const)', desc: 'Store data for later use. "let" can be reassigned, "const" cannot.', example: 'let name = "Ada";\nconst PI = 3.14;\nconsole.log(name, PI)' },
+      { name: 'Data Types', desc: 'JS has strings ("text"), numbers (42), booleans (true/false), null, undefined.', example: 'let text = "hello";  // string\nlet num = 42;        // number\nlet flag = true;     // boolean\nconsole.log(typeof text, typeof num, typeof flag)' },
+      { name: 'Template Literals', desc: 'Use backticks ` with ${} to embed expressions inside strings.', example: 'let name = "World";\nconsole.log(`Hello, ${name}!`)' },
+    ]},
+    { title: 'Operators & Conditions', concepts: [
+      { name: 'Arithmetic', desc: 'Math operators: + - * / % (remainder) ** (power)', example: 'console.log(10 + 5);\nconsole.log(10 % 3);  // remainder = 1\nconsole.log(2 ** 8);  // 256' },
+      { name: 'Comparison', desc: '=== (strict equal), !== (not equal), >, <, >=, <=. Always use === over ==.', example: 'console.log(5 === 5);    // true\nconsole.log("5" === 5);  // false\nconsole.log(10 > 3);     // true' },
+      { name: 'If / Else', desc: 'Run code only when a condition is true. else runs when false.', example: 'let score = 85;\nif (score >= 90) {\n  console.log("A");\n} else if (score >= 80) {\n  console.log("B");\n} else {\n  console.log("C");\n}' },
+      { name: 'Logical Operators', desc: '&& (AND) requires both true. || (OR) requires at least one. ! (NOT) inverts.', example: 'let logged = true, admin = false;\nif (logged && admin) {\n  console.log("admin panel");\n} else if (logged || admin) {\n  console.log("basic access");\n}' },
+    ]},
+    { title: 'Functions', concepts: [
+      { name: 'Function Declaration', desc: 'Reusable blocks of code. Define once, call many times.', example: 'function greet(name) {\n  return "Hello, " + name;\n}\nconsole.log(greet("Ada"))' },
+      { name: 'Arrow Functions', desc: 'Shorter syntax using =>. Great for callbacks and one-liners.', example: 'const double = (n) => n * 2;\nconst add = (a, b) => a + b;\nconsole.log(double(5));\nconsole.log(add(3, 4))' },
+      { name: 'Default Parameters', desc: 'Set fallback values if an argument is not provided.', example: 'function greet(name = "World") {\n  console.log(`Hello, ${name}!`);\n}\ngreet();       // Hello, World!\ngreet("Ada");  // Hello, Ada!' },
+    ]},
+    { title: 'Arrays & Loops', concepts: [
+      { name: 'Arrays', desc: 'Ordered lists of values. Access by index (starting at 0).', example: 'let fruits = ["apple", "banana", "cherry"];\nconsole.log(fruits[0]);    // apple\nconsole.log(fruits.length); // 3' },
+      { name: 'Array Methods', desc: 'push() adds, pop() removes last, includes() checks membership.', example: 'let arr = [1, 2, 3];\narr.push(4);\nconsole.log(arr);       // [1,2,3,4]\nconsole.log(arr.pop()); // 4' },
+      { name: 'For Loop', desc: 'Repeat code a specific number of times.', example: 'for (let i = 0; i < 5; i++) {\n  console.log("Step " + i);\n}' },
+      { name: 'forEach / map', desc: 'Iterate arrays. forEach runs a function on each. map transforms and returns new array.', example: 'let nums = [1, 2, 3];\nnums.forEach(n => console.log(n * 10));\nlet doubled = nums.map(n => n * 2);\nconsole.log(doubled)' },
+    ]},
+    { title: 'Objects & Advanced', concepts: [
+      { name: 'Objects', desc: 'Key-value pairs. Access with dot or bracket notation.', example: 'let user = { name: "Ada", age: 28 };\nconsole.log(user.name);\nuser.role = "dev";\nconsole.log(user)' },
+      { name: 'Destructuring', desc: 'Extract values from objects/arrays into variables.', example: 'let [a, b] = [1, 2];\nlet { name, age } = { name: "Ada", age: 28 };\nconsole.log(a, b, name, age)' },
+      { name: 'Spread Operator', desc: '... spreads arrays/objects into new ones. Great for copies and merging.', example: 'let arr = [1, 2, 3];\nlet copy = [...arr, 4, 5];\nconsole.log(copy)' },
+      { name: 'Ternary Operator', desc: 'Shorthand if/else: condition ? ifTrue : ifFalse', example: 'let age = 20;\nlet status = age >= 18 ? "adult" : "minor";\nconsole.log(status)' },
+    ]},
+  ],
+  git: [
+    { title: 'Getting Started', concepts: [
+      { name: 'git init', desc: 'Initialize a new Git repository in the current directory.', example: 'git init' },
+      { name: 'Creating Files', desc: 'Use echo to create files that Git can track.', example: 'echo "hello" > readme.txt' },
+      { name: 'git add', desc: 'Stage files for commit. "git add ." stages everything.', example: 'git add readme.txt\n# or stage all:\ngit add .' },
+      { name: 'git commit', desc: 'Save staged changes as a snapshot with a message.', example: 'git commit -m "Initial commit"' },
+    ]},
+    { title: 'Branching', concepts: [
+      { name: 'git branch', desc: 'Create or list branches. Branches let you work on features in isolation.', example: 'git branch feature\ngit branch  # list all' },
+      { name: 'git checkout / switch', desc: 'Move between branches. Use -b (checkout) or -c (switch) to create and switch.', example: 'git checkout feature\n# or modern:\ngit switch feature\ngit switch -c new-branch' },
+      { name: 'git merge', desc: 'Combine another branch into the current one.', example: 'git checkout main\ngit merge feature' },
+      { name: 'git stash', desc: 'Temporarily save uncommitted changes. Pop them back later.', example: 'git stash\ngit stash pop\ngit stash list' },
+    ]},
+  ],
+  cmd: [
+    { title: 'Navigation & Files', concepts: [
+      { name: 'pwd / ls / cd', desc: 'pwd = print directory, ls = list files, cd = change directory.', example: 'pwd\nls\ncd Documents' },
+      { name: 'touch / mkdir', desc: 'touch creates files, mkdir creates directories. mkdir -p for nested.', example: 'touch hello.txt\nmkdir projects\nmkdir -p deep/nested/dir' },
+      { name: 'cat / echo', desc: 'cat reads files, echo prints text. Use > to redirect output to files.', example: 'echo "hello" > file.txt\ncat file.txt' },
+      { name: 'cp / mv / rm', desc: 'cp = copy, mv = move/rename, rm = delete files.', example: 'cp file.txt backup.txt\nmv backup.txt archive.txt\nrm archive.txt' },
+    ]},
+    { title: 'Pipes & Environment', concepts: [
+      { name: 'Pipes |', desc: 'Send output of one command as input to another. Chain operations.', example: 'echo "hello world" | wc' },
+      { name: 'Redirection > / >>', desc: '> overwrites file, >> appends to file.', example: 'echo "line 1" > log.txt\necho "line 2" >> log.txt\ncat log.txt' },
+      { name: 'Environment Variables', desc: 'export sets, $VAR reads, env lists all variables.', example: 'export MY_VAR=hello\necho $MY_VAR\nenv' },
+      { name: 'grep / sort / wc', desc: 'grep searches text, sort orders lines, wc counts lines/words/chars.', example: 'echo "apple\nbanana\napricot" | grep ap\necho "c\na\nb" | sort' },
+    ]},
+  ],
+  html: [
+    { title: 'Document Structure', concepts: [
+      { name: 'HTML Skeleton', desc: 'Every page needs: <!DOCTYPE html>, <html>, <head>, <body>.', example: '<!DOCTYPE html>\n<html>\n<head>\n  <title>My Page</title>\n</head>\n<body>\n  <h1>Hello!</h1>\n</body>\n</html>' },
+      { name: 'Headings & Paragraphs', desc: '<h1>-<h6> for headings, <p> for paragraphs. Semantic structure matters.', example: '<h1>Main Title</h1>\n<h2>Subtitle</h2>\n<p>Some paragraph text.</p>' },
+      { name: 'Links & Images', desc: '<a href="url"> for links, <img src="file" alt="desc"> for images.', example: '<a href="https://example.com">Click here</a>\n<img src="photo.jpg" alt="A photo">' },
+    ]},
+    { title: 'Forms & Semantic HTML', concepts: [
+      { name: 'Lists', desc: '<ul> for unordered, <ol> for ordered. Each item in <li>.', example: '<ul>\n  <li>Item 1</li>\n  <li>Item 2</li>\n</ul>' },
+      { name: 'Forms & Inputs', desc: '<form>, <input>, <button>, <textarea>, <select> build interactive forms.', example: '<form>\n  <input type="text" placeholder="Name">\n  <button type="submit">Send</button>\n</form>' },
+      { name: 'Semantic Tags', desc: '<header>, <nav>, <main>, <section>, <article>, <footer> describe page structure.', example: '<header>\n  <nav><a href="/">Home</a></nav>\n</header>\n<main>\n  <article>Content here</article>\n</main>\n<footer>Copyright 2026</footer>' },
+    ]},
+  ],
+  css: [
+    { title: 'Selectors & Box Model', concepts: [
+      { name: 'Selectors', desc: 'element, .class, #id, element > child. Target what to style.', example: 'h1 { color: blue; }\n.card { padding: 16px; }\n#main { width: 100%; }' },
+      { name: 'Box Model', desc: 'Every element is a box: content + padding + border + margin.', example: '.box {\n  width: 200px;\n  padding: 16px;\n  border: 2px solid black;\n  margin: 8px;\n}' },
+      { name: 'Colors & Typography', desc: 'color for text, background-color for bg. font-size, font-weight for type.', example: 'body {\n  color: #333;\n  background-color: #f0f0f0;\n  font-size: 16px;\n  font-family: sans-serif;\n}' },
+    ]},
+    { title: 'Layout', concepts: [
+      { name: 'Flexbox', desc: 'display: flex makes a flex container. Align and distribute child elements.', example: '.container {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  gap: 16px;\n}' },
+      { name: 'Grid', desc: 'display: grid for 2D layouts. Define columns and rows.', example: '.grid {\n  display: grid;\n  grid-template-columns: 1fr 1fr 1fr;\n  gap: 16px;\n}' },
+      { name: 'Positioning', desc: 'static (default), relative, absolute, fixed, sticky. Control element placement.', example: '.modal {\n  position: fixed;\n  top: 50%;\n  left: 50%;\n  transform: translate(-50%, -50%);\n  z-index: 100;\n}' },
+    ]},
+  ],
+  csharp: [
+    { title: 'C# Basics', concepts: [
+      { name: 'Hello World', desc: 'Console.WriteLine() prints to console. Every C# program starts in Main().', example: 'using System;\nConsole.WriteLine("Hello, World!");' },
+      { name: 'Variables & Types', desc: 'C# is strongly typed: int, string, bool, double. Declare with type first.', example: 'int score = 100;\nstring name = "Ada";\nbool active = true;\ndouble pi = 3.14;' },
+      { name: 'If / Else', desc: 'Same structure as JS but strongly typed comparisons.', example: 'int x = 10;\nif (x > 5) {\n  Console.WriteLine("big");\n} else {\n  Console.WriteLine("small");\n}' },
+    ]},
+    { title: 'Methods & Collections', concepts: [
+      { name: 'Methods', desc: 'Define with return type, name, parameters. void for no return.', example: 'static int Add(int a, int b) {\n  return a + b;\n}\nConsole.WriteLine(Add(3, 4));' },
+      { name: 'Loops', desc: 'for, while, foreach. foreach is great for collections.', example: 'for (int i = 0; i < 5; i++) {\n  Console.WriteLine(i);\n}\nstring[] names = {"Ada", "Bob"};\nforeach (var n in names) {\n  Console.WriteLine(n);\n}' },
+      { name: 'Classes', desc: 'Blueprints for objects. Properties store data, methods define behavior.', example: 'class Dog {\n  public string Name { get; set; }\n  public void Bark() {\n    Console.WriteLine(Name + " barks!");\n  }\n}' },
+    ]},
+  ],
+};
+
 const THEMES = {
   green:  { name: 'Matrix Green',  key: 'green' },
   amber:  { name: 'Amber CRT',    key: 'amber' },
@@ -52,8 +236,14 @@ class SudoQuest {
     this.achievements = new Set();
     this.firstTryStreak = 0;
 
+    // Sandbox state
+    this.sandboxMode = false;
+    this.sandboxCategory = null;
+    this.sandboxLessonIndex = 0;
+    this.sandboxConceptIndex = 0;
+
     // Tab completion
-    this.tabCommands = ['hint','clear','reset','restart','levels','categories','skip','next','theme','help','explain','save','load','achievements','score'];
+    this.tabCommands = ['hint','clear','reset','restart','levels','categories','skip','next','theme','help','explain','save','load','achievements','score','learn','sandbox','sound'];
 
     // DOM elements
     this.output = document.getElementById('output');
@@ -213,6 +403,8 @@ class SudoQuest {
     this.addBlank();
     this.addLine('Welcome to sudo quest! Learn to code, one command at a time.', 'system');
     this.addBlank();
+    this.addLine('New here? Type "learn" to start the guided sandbox.', 'hint');
+    this.addBlank();
     this.addLine('Are you ready?  (y/n)', 'question');
     this.addBlank();
     this.awaitingReady = true;
@@ -235,6 +427,11 @@ class SudoQuest {
   }
 
   handleReadyInput(input) {
+    if (input === 'learn' || input === 'sandbox') {
+      this.awaitingReady = false;
+      this.enterSandbox();
+      return true;
+    }
     if (input === 'y' || input === 'yes') {
       this.awaitingReady = false;
       this.showCategoryScreen();
@@ -434,6 +631,7 @@ class SudoQuest {
 
     // Ready/Category screens
     const lower = trimmed.toLowerCase();
+    if (this.sandboxMode) { this.handleSandboxInput(trimmed); return; }
     if (this.awaitingReady) { this.handleReadyInput(lower); return; }
     if (this.awaitingCategory) { this.handleCategoryInput(lower); return; }
 
@@ -491,6 +689,9 @@ class SudoQuest {
       achievements: () => this.showAchievements(),
       score: () => this.showScore(),
       '?': () => this.toggleKbOverlay(),
+      learn: () => this.enterSandbox(),
+      sandbox: () => this.enterSandbox(),
+      sound: () => this.toggleSound(),
     };
 
     const run = (fn) => {
@@ -536,6 +737,8 @@ class SudoQuest {
       ['load <data>',  'Import progress'],
       ['achievements', 'View badges'],
       ['score',        'Score summary'],
+      ['learn',        'Learning sandbox'],
+      ['sound',        'Toggle sound fx'],
       ['?',            'Keyboard shortcuts'],
       ['help',         'Show this help'],
     ];
@@ -1279,6 +1482,9 @@ class SudoQuest {
       this.firstTryStreak = 0;
     }
 
+    // Play completion sound
+    sound.playLevelComplete();
+
     this.addBlank();
     this.addLine('\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557', 'success');
     this.addLine(`\u2551    \u2713  LEVEL COMPLETE!  (${pts} pts)     \u2551`, 'success');
@@ -1424,10 +1630,8 @@ class SudoQuest {
   updateScoreDisplay() {
     if (this.scoreDisplay) {
       let total = 0;
-      for (const l of this.levels) {
-        if (this.completedLevels.has(l.id)) {
-          total += (this.score[l.id] ?? 100);
-        }
+      for (const id of this.completedLevels) {
+        total += (this.score[id] ?? 100);
       }
       this.scoreDisplay.textContent = `${total}pts`;
     }
@@ -1627,6 +1831,7 @@ class SudoQuest {
     const el = document.createElement('div');
     el.className = 'achievement-badge';
     el.innerHTML = `<span class="badge-icon">${def.icon}</span><div class="badge-text"><span class="badge-title">${def.title}</span><span class="badge-desc">${def.desc}</span></div>`;
+    sound.playAchievement();
     this.achievementToast.appendChild(el);
     setTimeout(() => el.remove(), 4200);
   }
@@ -1659,15 +1864,255 @@ class SudoQuest {
     this.addBlank();
   }
 
+  // ── Sound Toggle ───────────────────────────────────────────
+
+  toggleSound() {
+    const on = sound.toggle();
+    this.addLine(`Sound effects ${on ? 'enabled' : 'disabled'}.`, 'system');
+    if (on) sound.playLevelComplete();
+  }
+
+  // ── Learning Sandbox ──────────────────────────────────────
+
+  enterSandbox() {
+    this.sandboxMode = true;
+    this.sandboxCategory = null;
+    this.sandboxLessonIndex = 0;
+    this.sandboxConceptIndex = 0;
+    this.clearTerminal();
+
+    const art = `
+ ╔═╗ ╔═╗ ╔╗╔ ╔╦╗ ╔╗  ╔═╗ ═╗╔═
+ ╚═╗ ╠═╣ ║║║  ║║ ╠╩╗ ║ ║  ╠╣
+ ╚═╝ ╩ ╩ ╝╚╝ ═╩╝ ╚═╝ ╚═╝ ═╝╚═`;
+    this.addHTML(`<pre class="ascii-art">${art}</pre>`, 'system');
+    this.addBlank();
+    this.addLine('Welcome to the Learning Sandbox!', 'system');
+    this.addLine('A guided, step-by-step walkthrough of core concepts.', 'dim');
+    this.addBlank();
+    this.addLine('Pick a topic to learn:', 'question');
+    this.addBlank();
+
+    const keys = Object.keys(SANDBOX_LESSONS);
+    const labels = { js: 'JavaScript', git: 'Git', cmd: 'Terminal', html: 'HTML', css: 'CSS', csharp: 'C#' };
+    keys.forEach(k => {
+      const lessons = SANDBOX_LESSONS[k];
+      const totalConcepts = lessons.reduce((n, l) => n + l.concepts.length, 0);
+      this.addLine(`  ${k.padEnd(8)} — ${labels[k] || k} (${lessons.length} lessons, ${totalConcepts} concepts)`, 'system');
+    });
+    this.addBlank();
+    this.addLine('Type a topic name (e.g. "js") or "exit" to leave sandbox.', 'dim');
+    this.addBlank();
+  }
+
+  handleSandboxInput(input) {
+    const lower = input.toLowerCase().trim();
+
+    // Exit sandbox
+    if (lower === 'exit' || lower === 'quit' || lower === 'q' || lower === 'back') {
+      this.sandboxMode = false;
+      this.sandboxCategory = null;
+      this.clearTerminal();
+      if (this.gameStarted && this.currentCategory) {
+        this.loadLevel(this.currentLevelIndex);
+      } else {
+        this.showReadyScreen();
+      }
+      return;
+    }
+
+    // Picking a category
+    if (!this.sandboxCategory) {
+      if (SANDBOX_LESSONS[lower]) {
+        this.sandboxCategory = lower;
+        this.sandboxLessonIndex = 0;
+        this.sandboxConceptIndex = 0;
+        this.showSandboxConcept();
+      } else {
+        this.addLine(`Unknown topic "${lower}". Choose: ${Object.keys(SANDBOX_LESSONS).join(', ')}`, 'error');
+      }
+      return;
+    }
+
+    // Navigation within sandbox
+    if (lower === 'next' || lower === 'n' || lower === '') {
+      this.advanceSandbox();
+      return;
+    }
+    if (lower === 'prev' || lower === 'p') {
+      this.retreatSandbox();
+      return;
+    }
+    if (lower === 'menu' || lower === 'topics') {
+      this.sandboxCategory = null;
+      this.enterSandbox();
+      return;
+    }
+    if (lower === 'list' || lower === 'lessons') {
+      this.showSandboxLessonList();
+      return;
+    }
+
+    // Try running code in the sandbox (JS only)
+    if (this.sandboxCategory === 'js') {
+      this.runSandboxCode(input);
+      return;
+    }
+
+    // For non-JS categories, just show the code they typed
+    input.split('\n').forEach(line => this.addLine(line, 'output'));
+    this.addBlank();
+    this.addLine('Press Enter or type "next" for the next concept.', 'dim');
+  }
+
+  showSandboxConcept() {
+    const lessons = SANDBOX_LESSONS[this.sandboxCategory];
+    if (!lessons) return;
+    const lesson = lessons[this.sandboxLessonIndex];
+    if (!lesson) return;
+    const concept = lesson.concepts[this.sandboxConceptIndex];
+    if (!concept) return;
+
+    this.clearTerminal();
+
+    // Progress bar
+    const totalConcepts = lessons.reduce((n, l) => n + l.concepts.length, 0);
+    let currentNum = 0;
+    for (let i = 0; i < this.sandboxLessonIndex; i++) currentNum += lessons[i].concepts.length;
+    currentNum += this.sandboxConceptIndex + 1;
+
+    const labels = { js: 'JavaScript', git: 'Git', cmd: 'Terminal', html: 'HTML', css: 'CSS', csharp: 'C#' };
+    const catName = labels[this.sandboxCategory] || this.sandboxCategory;
+
+    this.addLine(`\u2550\u2550 ${catName} Sandbox \u2550\u2550  [${currentNum}/${totalConcepts}]`, 'system');
+    this.addBlank();
+    this.addLine(`Lesson: ${lesson.title}`, 'level-header');
+    this.addBlank();
+
+    // Concept name & description
+    this.addLine(`\u25B6 ${concept.name}`, 'question');
+    this.addBlank();
+    this.addLine(concept.desc, 'output');
+    this.addBlank();
+
+    // Example code
+    this.addLine('\u2500\u2500 Example \u2500\u2500', 'dim');
+    concept.example.split('\n').forEach(line => {
+      this.addLine(`  ${line}`, 'success');
+    });
+    this.addBlank();
+
+    // Try it prompt
+    if (this.sandboxCategory === 'js') {
+      this.addLine('Try it! Type the code above (or your own) and press Enter.', 'hint');
+    } else {
+      this.addLine('Study the example, then try typing it yourself.', 'hint');
+    }
+    this.addLine('Commands: next (n), prev (p), list, menu, exit', 'dim');
+    this.addBlank();
+
+    this.input.focus();
+  }
+
+  advanceSandbox() {
+    const lessons = SANDBOX_LESSONS[this.sandboxCategory];
+    if (!lessons) return;
+    const lesson = lessons[this.sandboxLessonIndex];
+
+    if (this.sandboxConceptIndex < lesson.concepts.length - 1) {
+      this.sandboxConceptIndex++;
+    } else if (this.sandboxLessonIndex < lessons.length - 1) {
+      this.sandboxLessonIndex++;
+      this.sandboxConceptIndex = 0;
+    } else {
+      // Completed all lessons
+      sound.playLevelComplete();
+      this.clearTerminal();
+      this.addBlank();
+      this.addLine('\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557', 'success');
+      this.addLine('\u2551    SANDBOX COMPLETE! Nice work!     \u2551', 'success');
+      this.addLine('\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D', 'success');
+      this.addBlank();
+      this.addLine('You\'ve covered all concepts for this topic.', 'success-message');
+      this.addLine('Ready to test your skills? Type "exit" to go to the challenges!', 'dim');
+      this.addBlank();
+      this.addLine('Or type "menu" to pick another topic.', 'dim');
+      this.addBlank();
+      return;
+    }
+    sound.playNote(660, 0.1, sound.getCtx()?.currentTime || 0, 0.06);
+    this.showSandboxConcept();
+  }
+
+  retreatSandbox() {
+    const lessons = SANDBOX_LESSONS[this.sandboxCategory];
+    if (!lessons) return;
+
+    if (this.sandboxConceptIndex > 0) {
+      this.sandboxConceptIndex--;
+    } else if (this.sandboxLessonIndex > 0) {
+      this.sandboxLessonIndex--;
+      this.sandboxConceptIndex = lessons[this.sandboxLessonIndex].concepts.length - 1;
+    } else {
+      this.addLine('Already at the first concept.', 'dim');
+      return;
+    }
+    this.showSandboxConcept();
+  }
+
+  showSandboxLessonList() {
+    const lessons = SANDBOX_LESSONS[this.sandboxCategory];
+    if (!lessons) return;
+    this.addBlank();
+    this.addLine('Lessons:', 'system');
+    lessons.forEach((lesson, li) => {
+      const marker = li === this.sandboxLessonIndex ? '>' : ' ';
+      this.addLine(`  ${marker} ${li + 1}. ${lesson.title} (${lesson.concepts.length} concepts)`, li === this.sandboxLessonIndex ? 'question' : 'dim');
+    });
+    this.addBlank();
+  }
+
+  async runSandboxCode(code) {
+    this.isExecuting = true;
+    this.runBtn.textContent = '...';
+    this.runBtn.disabled = true;
+
+    try {
+      const result = await this.runInSandbox(code);
+      if (result.consoleLogs?.length) {
+        result.consoleLogs.forEach(log => this.addLine(log, 'output'));
+      }
+      if (result.errors?.length) {
+        result.errors.forEach(err => this.addLine(`Error: ${err}`, 'error'));
+        sound.playError();
+      } else {
+        this.addLine('\u2713 Code executed!', 'success');
+      }
+    } catch (err) {
+      this.addLine(`Error: ${err.message}`, 'error');
+    } finally {
+      this.isExecuting = false;
+      this.runBtn.textContent = 'RUN';
+      this.runBtn.disabled = false;
+      this.input.focus();
+    }
+
+    this.addBlank();
+    this.addLine('Type "next" for the next concept, or try more code.', 'dim');
+  }
+
   // ── Category Complete ──────────────────────────────────────
 
   showCategoryComplete() {
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.timerRunning = false;
+    sound.playCategoryComplete();
 
     const totalTime = this.sessionStartTime ? Date.now() - this.sessionStartTime : 0;
     let totalScore = 0;
-    for (const l of this.levels) totalScore += (this.score[l.id] ?? 100);
+    for (const l of this.levels) {
+      if (this.completedLevels.has(l.id)) totalScore += (this.score[l.id] ?? 100);
+    }
     const pb = this.personalBests[this.currentCategory];
     const pbLine = pb ? `     Personal best: ${this.formatTime(pb).padEnd(28)}\u2551` : `${''.padEnd(51)}\u2551`;
 

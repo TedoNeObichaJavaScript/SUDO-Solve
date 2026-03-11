@@ -2,7 +2,7 @@ import { vHas } from './helpers.js';
 
 export const HTML_LEVELS = [
   { id:3001, title:'HTML Boilerplate', category:'HTML', type:'html',
-    question:'Write the basic HTML structure: <!DOCTYPE html><html><head></head><body></body></html>',
+    question:'Write the basic HTML5 document structure with DOCTYPE declaration, html, head, and body tags.',
     hints:['Every HTML page starts with <!DOCTYPE html>','Nest head and body inside html','<!DOCTYPE html><html><head></head><body></body></html>'],
     validate: vHas(['<!DOCTYPE','<html','<head','<body','</html>']),
     successMessage:'This is the skeleton of every web page. DOCTYPE tells the browser to use modern HTML5.' },
@@ -152,25 +152,25 @@ export const HTML_LEVELS = [
     successMessage:'UTF-8 supports virtually all characters worldwide. Always include this as the first meta tag.' },
 
   { id:3026, title:'Viewport Meta', category:'HTML', type:'html',
-    question:'Add the responsive viewport meta tag: <meta name="viewport" content="width=device-width, initial-scale=1.0">.',
+    question:'Add the viewport meta tag to make your page responsive on mobile devices.',
     hints:['This makes pages mobile-friendly','name="viewport" is the key','<meta name="viewport" content="width=device-width, initial-scale=1.0">'],
     validate: vHas(['<meta','viewport','width=device-width']),
     successMessage:'Without this meta tag, mobile browsers zoom out to show the desktop version. Essential for responsive design.' },
 
   { id:3027, title:'External CSS Link', category:'HTML', type:'html',
-    question:'Link an external stylesheet: <link rel="stylesheet" href="style.css">.',
+    question:'Link an external CSS file called "style.css" to your page using the appropriate tag.',
     hints:['<link> goes in <head>','rel="stylesheet" is required','<link rel="stylesheet" href="style.css">'],
     validate: vHas(['<link','rel="stylesheet"','href=']),
     successMessage:'External CSS keeps styles separate from HTML. One CSS file can style multiple pages.' },
 
   { id:3028, title:'Script Tag', category:'HTML', type:'html',
-    question:'Add a script tag: <script src="app.js"></script>.',
+    question:'Load an external JavaScript file called "app.js" using a script tag.',
     hints:['<script> loads JavaScript','Put it before </body> for performance','<script src="app.js"></script>'],
     validate: vHas(['<script','src="app.js"','</script>']),
     successMessage:'Place scripts at the bottom of <body> or use "defer" attribute for better page load performance.' },
 
   { id:3029, title:'Comment', category:'HTML', type:'html',
-    question:'Write an HTML comment: <!-- This is a comment -->.',
+    question:'Write an HTML comment with any text inside it.',
     hints:['Comments start with <!-- and end with -->','They don\'t show on the page','<!-- This is a comment -->'],
     validate: vHas(['<!--','-->']),
     successMessage:'Comments are invisible to users but visible in source code. Use for notes and debugging.' },
@@ -182,7 +182,7 @@ export const HTML_LEVELS = [
     successMessage:'data-* attributes store custom data on elements. Access in JS with element.dataset.id.' },
 
   { id:3031, title:'Checkbox', category:'HTML', type:'html',
-    question:'Create a checkbox input with a label: <input type="checkbox" id="agree"><label for="agree">I agree</label>.',
+    question:'Create a checkbox input with id "agree" and pair it with a label that says "I agree".',
     hints:['type="checkbox" makes a checkbox','Pair with label using for/id','<input type="checkbox" id="agree"><label for="agree">I agree</label>'],
     validate: vHas(['type="checkbox"','<label','for="agree"']),
     successMessage:'Checkboxes are boolean inputs. Check state with element.checked in JavaScript.' },

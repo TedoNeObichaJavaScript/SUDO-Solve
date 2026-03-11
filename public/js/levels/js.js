@@ -32,7 +32,7 @@ export const JS_LEVELS = [
     successMessage:'The + operator joins strings. For complex strings, use template literals with backticks: `Hello, ${name}!`' },
 
   { id:6, title:'Template Literals', category:'JavaScript', type:'js',
-    question:'Create name = "World", then use a template literal to set greeting = `Hello, ${name}!`. Log greeting.',
+    question:'Create a variable name set to "World", then use a template literal (backticks) to build and log a greeting that says "Hello, World!".',
     hints:['Template literals use backticks ` instead of quotes.','Use ${variable} inside backticks to embed values.','let name = "World"; let greeting = `Hello, ${name}!`; console.log(greeting)'],
     validate:(c,r)=>{ if(r.errors?.length)return F(r.errors[0]); if(!codeHas(c,'`'))return F('Use backticks ` for template literals.'); return hasOutput(r,'Hello, World!')?P:F('Output should be "Hello, World!"'); },
     successMessage:'Template literals (``) let you embed expressions with ${...}. Much cleaner than string concatenation!' },
@@ -98,7 +98,7 @@ export const JS_LEVELS = [
     successMessage:'Loops go any direction! i++ counts up, i-- counts down. You can even use i+=2 to skip.' },
 
   { id:17, title:'for...of Loop', category:'JavaScript', type:'js',
-    question:'Create array ["a","b","c"] and use for...of to log each element.',
+    question:'Create an array with three single-letter strings ("a", "b", "c") and use a for...of loop to log each one.',
     hints:['for...of iterates through array values directly.','for (let item of array) { console.log(item) }','let arr = ["a","b","c"]; for (let x of arr) { console.log(x) }'],
     validate:(c,r)=>{ if(r.errors?.length)return F(r.errors[0]); return outputEquals(r,['a','b','c'])?P:F('Loop through ["a","b","c"] and log each element.'); },
     successMessage:'for...of is the cleanest way to loop arrays. Use for...in for object keys instead.' },
@@ -110,13 +110,13 @@ export const JS_LEVELS = [
     successMessage:'Arrays store ordered lists. They can hold any type: strings, numbers, objects, even other arrays!' },
 
   { id:19, title:'Array Access', category:'JavaScript', type:'js',
-    question:'Create ["cat","dog","fish"] and log the FIRST element (index 0).',
+    question:'Create an array with "cat", "dog", and "fish", then log only the first element.',
     hints:['Arrays are zero-indexed: first element is [0].','console.log(arrayName[0])','let pets = ["cat","dog","fish"]; console.log(pets[0])'],
     validate:(c,r)=>{ if(r.errors?.length)return F(r.errors[0]); return hasOutput(r,'cat',true)?P:F('Use [0] to access the first element.'); },
     successMessage:'Array indexing starts at 0. [0]=first, [1]=second, [-1] doesn\'t work in JS (use .at(-1) instead).' },
 
   { id:20, title:'Array Push', category:'JavaScript', type:'js',
-    question:'Create ["a","b"], use .push("c") to add to the end.',
+    question:'Create an array with "a" and "b", then use the .push() method to add "c" to the end.',
     hints:['.push() adds an element to the end.','arrayName.push(newElement)','let arr = ["a","b"]; arr.push("c")'],
     validate:(c,r)=>{ if(r.errors?.length)return F(r.errors[0]); if(!codeHas(c,'.push('))return F('Use .push() method.'); for(const v of Object.values(r.variables)){if(Array.isArray(v)&&v.includes('c')&&v.length>=3)return P;} return F('After push, array should contain ["a","b","c"].'); },
     successMessage:'.push() adds to end, .pop() removes from end. .unshift()/.shift() work on the beginning.' },
@@ -134,13 +134,13 @@ export const JS_LEVELS = [
     successMessage:'Objects store key-value pairs. They represent real-world things: users, products, configs, API responses.' },
 
   { id:23, title:'Object Property', category:'JavaScript', type:'js',
-    question:'Create user = { name: "Alex" }, then log user.name.',
+    question:'Create an object called "user" with a name property set to "Alex", then log the name using dot notation.',
     hints:['Dot notation: object.property','console.log(obj.propertyName)','let user = { name: "Alex" }; console.log(user.name)'],
     validate:(c,r)=>{ if(r.errors?.length)return F(r.errors[0]); return hasOutput(r,'Alex',true)?P:F('Log user.name using dot notation.'); },
     successMessage:'Dot notation (obj.key) is most common. Bracket notation (obj["key"]) works too and allows dynamic keys.' },
 
   { id:24, title:'Nested Objects', category:'JavaScript', type:'js',
-    question:'Create an object with address: { city: "Tokyo" }. Log the city.',
+    question:'Create an object that has a nested "address" object containing a "city" property set to "Tokyo". Log the city value.',
     hints:['Objects can contain other objects.','Chain dots: object.outer.inner','let p = { address: { city: "Tokyo" } }; console.log(p.address.city)'],
     validate: vOut('Tokyo'),
     successMessage:'Nested objects are everywhere: API responses, configs, DOM. Optional chaining (?.) prevents errors on missing properties.' },
@@ -152,13 +152,13 @@ export const JS_LEVELS = [
     successMessage:'Functions are reusable blocks of code. Define once, call many times. They\'re the building blocks of any program.' },
 
   { id:26, title:'Return Value', category:'JavaScript', type:'js',
-    question:'Create function "add(a, b)" that returns a + b. Log add(3, 7).',
+    question:'Create a function called "add" that takes two parameters and returns their sum. Log the result of calling it with 3 and 7.',
     hints:['Use "return" to send a value back.','function add(a,b) { return a + b }','function add(a,b) { return a+b }; console.log(add(3,7))'],
     validate:(c,r)=>{ if(r.errors?.length)return F(r.errors[0]); if(!codeHas(c,'return'))return F('Use "return" in the function.'); return hasOutput(r,'10')?P:F('add(3,7) should output 10.'); },
     successMessage:'Return sends a value back to the caller. Without return, functions return undefined.' },
 
   { id:27, title:'Arrow Function', category:'JavaScript', type:'js',
-    question:'Create arrow function "double" that returns n * 2. Log double(5).',
+    question:'Create an arrow function called "double" that takes a number and returns it multiplied by 2. Log the result of calling it with 5.',
     hints:['Arrow syntax: const name = (params) => expression','For single expressions, skip { } and return','const double = (n) => n * 2; console.log(double(5))'],
     validate:(c,r)=>{ if(r.errors?.length)return F(r.errors[0]); if(!codeHas(c,'=>'))return F('Use arrow syntax =>'); return hasOutput(r,'10')?P:F('double(5) should output 10.'); },
     successMessage:'Arrow functions are concise. Single expression? Skip { } and return. const sq = n => n*n;' },
@@ -200,7 +200,7 @@ export const JS_LEVELS = [
     successMessage:'Spread copies arrays/objects shallowly. Merge objects: { ...obj1, ...obj2 }. Great for immutable updates.' },
 
   { id:34, title:'Class', category:'JavaScript', type:'js',
-    question:'Create a class Animal with constructor(name) that sets this.name. Create let pet = new Animal("Rex"). Log pet.name.',
+    question:'Create a class called "Animal" with a constructor that stores a name. Create an instance with name "Rex" and log its name property.',
     hints:['class Name { constructor(params) { this.prop = params } }','new creates an instance','class Animal { constructor(name) { this.name = name } } let pet = new Animal("Rex"); console.log(pet.name)'],
     validate:(c,r)=>{ if(r.errors?.length)return F(r.errors[0]); if(!codeHas(c,'class'))return F('Use the class keyword.'); return hasOutput(r,'Rex')?P:F('Log pet.name — should output "Rex".'); },
     successMessage:'Classes are blueprints for objects. Supports extends for inheritance, get/set for computed properties, and static methods.' },
