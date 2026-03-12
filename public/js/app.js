@@ -1193,7 +1193,7 @@ class SudoQuest {
     return new Promise((resolve) => {
       let worker;
       try {
-        worker = new Worker('/workers/sandbox-worker.js');
+        worker = new Worker('workers/sandbox-worker.js');
       } catch (_) {
         resolve(this.executeInline(code));
         return;
