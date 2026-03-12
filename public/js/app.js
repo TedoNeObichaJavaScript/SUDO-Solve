@@ -722,7 +722,7 @@ class SudoQuest {
       const diffLabel = ['Easy','Medium','Hard'][stars - 1];
       this.addLine(`\u2554${bar}\u2557`, 'level-header');
       const title = `  LEVEL ${index + 1}: ${level.title}`;
-      const cat = `  Category: ${level.category}  |  ${'\u2605'.repeat(stars)} ${diffLabel}`;
+      const cat = `  Category: ${level.category}  |  ${'*'.repeat(stars)} ${diffLabel}`;
       this.addLine(`\u2551${title.padEnd(56)}\u2551`, 'level-header');
       this.addLine(`\u2551${cat.padEnd(56)}\u2551`, 'level-header');
       this.addLine(`\u255A${bar}\u255D`, 'level-header');
@@ -1783,7 +1783,7 @@ class SudoQuest {
       const diff = document.createElement('span');
       diff.className = 'split-difficulty';
       const stars = this.getDifficulty(i, this.levels.length);
-      diff.textContent = '\u2605'.repeat(stars);
+      diff.textContent = '*'.repeat(stars);
       diff.title = ['Easy','Medium','Hard'][stars - 1];
 
       const time = document.createElement('span');
@@ -1888,7 +1888,7 @@ class SudoQuest {
     const pts = this.score[id] ?? 100;
     const time = this.levelTimes[id];
     this.addLine('Your performance:', 'level-header');
-    this.addLine(`  Difficulty: ${'★'.repeat(stars)} ${diffLabel}`, 'dim');
+    this.addLine(`  Difficulty: ${'*'.repeat(stars)} ${diffLabel}`, 'dim');
     this.addLine(`  Attempts: ${attempts}  |  Hints: ${hints}/3  |  Score: ${pts} pts`, 'dim');
     if (time) this.addLine(`  Time: ${this.formatTime(time)}`, 'dim');
 

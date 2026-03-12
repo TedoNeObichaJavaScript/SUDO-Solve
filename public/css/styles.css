@@ -917,11 +917,11 @@ html, body {
 /* ── Difficulty Stars in Sidebar ────────────────────────────── */
 
 .split-difficulty {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--yellow);
   margin-left: 2px;
   flex-shrink: 0;
-  letter-spacing: -1px;
+  letter-spacing: 1px;
 }
 
 /* ── Mobile Adjustments ──────────────────────────────────────── */
