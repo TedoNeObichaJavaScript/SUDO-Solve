@@ -398,6 +398,7 @@ class SudoQuest {
     this.loadProgress();
     this.recordLogin();
     this.setupEventListeners();
+    this.setupMobileViewport();
     this.setupTimerDisplay();
     if (this.gameStarted && this.currentCategory) {
       this.levels = getLevelsForCategory(this.currentCategory);
@@ -508,6 +509,32 @@ class SudoQuest {
         }
       });
     }
+  }
+
+  // ── Mobile Viewport (virtual keyboard) ─────────────────────
+
+  setupMobileViewport() {
+    // Compensate for mobile virtual keyboard pushing content up
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => {
+        const keyboardOpen = window.visualViewport.height < window.innerHeight * 0.75;
+        if (keyboardOpen && document.activeElement === this.input) {
+          // Scroll input into view after keyboard settles
+          setTimeout(() => {
+            this.input.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }, 50);
+        }
+      });
+    }
+
+    // Ensure input stays visible when focused on mobile
+    this.input.addEventListener('focus', () => {
+      if (window.innerWidth <= 768) {
+        setTimeout(() => {
+          this.input.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 300);
+      }
+    });
   }
 
   // ── Ready Screen ──────────────────────────────────────────
@@ -1944,6 +1971,7 @@ class SudoQuest {
     if (this.mobileDrawer) {
       this.mobileDrawer.hidden = false;
       if (this.mobileOverlay) this.mobileOverlay.hidden = false;
+      document.body.style.overflow = 'hidden';
       requestAnimationFrame(() => this.mobileDrawer.classList.add('open'));
     }
   }
@@ -1951,6 +1979,7 @@ class SudoQuest {
   closeMobileDrawer() {
     if (this.mobileDrawer) {
       this.mobileDrawer.classList.remove('open');
+      document.body.style.overflow = '';
       setTimeout(() => {
         this.mobileDrawer.hidden = true;
         if (this.mobileOverlay) this.mobileOverlay.hidden = true;
