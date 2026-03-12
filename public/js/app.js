@@ -362,7 +362,7 @@ class SudoQuest {
     this.reviewQueue = [];     // [{catKey, levelId, dueDate}]
 
     // Tab completion
-    this.tabCommands = ['hint','clear','reset','restart','levels','categories','skip','next','theme','help','explain','save','load','achievements','score','learn','sandbox','sound','stats','playground','streak','daily','review','projects'];
+    this.tabCommands = ['hint','clear','reset','restart','levels','categories','skip','next','theme','help','explain','save','load','achievements','score','learn','sandbox','sound','timestop','stats','playground','streak','daily','review','projects'];
 
     // DOM elements
     this.output = document.getElementById('output');
@@ -382,6 +382,12 @@ class SudoQuest {
     this.hamburger = document.getElementById('hamburger');
     this.mobileDrawer = document.getElementById('mobile-drawer');
     this.mobileOverlay = document.getElementById('mobile-overlay');
+    this.musicPanel = document.getElementById('music-panel');
+    this.musicToggleBtn = document.getElementById('music-toggle-btn');
+    this.musicCloseBtn = document.getElementById('music-close-btn');
+    this.musicUrlInput = document.getElementById('music-url-input');
+    this.musicLoadBtn = document.getElementById('music-load-btn');
+    this.musicEmbedWrap = document.getElementById('music-embed-wrap');
 
     if (!this.input || !this.output) {
       console.error('Required DOM elements not found');
@@ -509,6 +515,24 @@ class SudoQuest {
         }
       });
     }
+
+    // Music panel
+    if (this.musicToggleBtn) {
+      this.musicToggleBtn.addEventListener('click', () => this.toggleMusicPanel());
+    }
+    if (this.musicCloseBtn) {
+      this.musicCloseBtn.addEventListener('click', () => this.toggleMusicPanel(false));
+    }
+    if (this.musicLoadBtn) {
+      this.musicLoadBtn.addEventListener('click', () => this.loadMusicUrl());
+    }
+    if (this.musicUrlInput) {
+      this.musicUrlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); this.loadMusicUrl(); }
+        e.stopPropagation();
+      });
+      this.musicUrlInput.addEventListener('input', (e) => e.stopPropagation());
+    }
   }
 
   // ── Mobile Viewport (virtual keyboard) ─────────────────────
@@ -572,8 +596,17 @@ class SudoQuest {
     CATEGORIES.forEach((cat) => {
       const count = cat.levels.length;
       const completed = cat.levels.filter(l => this.completedLevels.has(l.id)).length;
-      const status = completed === count ? ' [COMPLETE]' : completed > 0 ? ` [${completed}/${count}]` : '';
-      this.addLine(`  ${cat.key.padEnd(8)} — ${cat.name} (${count} levels)${status}`, 'system');
+      const pct = Math.round((completed / count) * 100);
+      const status = completed === count ? ' \u2713 COMPLETE' : completed > 0 ? ` ${completed}/${count}` : '';
+      this.addLine(`  ${cat.key.padEnd(8)} \u2014 ${cat.name} (${count} levels)${status}`, 'system');
+      // Visual progress bar
+      if (completed > 0) {
+        const barWidth = 20;
+        const filled = Math.round((completed / count) * barWidth);
+        const empty = barWidth - filled;
+        const bar = `           [${'█'.repeat(filled)}${'░'.repeat(empty)}] ${pct}%`;
+        this.addLine(bar, completed === count ? 'success' : 'dim');
+      }
     });
     this.addBlank();
     this.addLine('Type a category name to begin (e.g. "js", "git", "html"):', 'dim');
@@ -614,8 +647,11 @@ class SudoQuest {
       this.awaitingCategory = false;
       this.currentCategory = input;
       this.levels = cat.levels;
-      this.currentLevelIndex = 0;
       this.gameStarted = true;
+
+      // Resume from first incomplete level, or start at 0
+      const resumeIndex = cat.levels.findIndex(l => !this.completedLevels.has(l.id));
+      this.currentLevelIndex = resumeIndex >= 0 ? resumeIndex : 0;
 
       // Reset timer for new category
       this.levelTimes = {};
@@ -623,14 +659,19 @@ class SudoQuest {
       this.startTimer();
       this.renderSplits();
       this.clearTerminal();
-      this.addLine(`Starting ${cat.name}...`, 'system');
+      const completed = cat.levels.filter(l => this.completedLevels.has(l.id)).length;
+      if (completed > 0) {
+        this.addLine(`Resuming ${cat.name} (${completed}/${cat.levels.length} completed)...`, 'system');
+      } else {
+        this.addLine(`Starting ${cat.name}...`, 'system');
+      }
       this.addBlank();
-      this.loadLevel(0);
+      this.loadLevel(this.currentLevelIndex);
       this.saveProgress();
       return true;
     }
-    this.addLine(`Unknown category "${input}". Type one of: ${CATEGORIES.map(c => c.key).join(', ')}`, 'error');
-    return true;
+    // Don't show error for known special commands — let them fall through
+    return false;
   }
 
   // ── Progress Persistence ────────────────────────────────────
@@ -776,10 +817,11 @@ class SudoQuest {
   updateHeader(level) {
     const total = this.levels.length;
     const levelNum = this.currentLevelIndex + 1;
-    if (this.levelIndicator) this.levelIndicator.textContent = `Level ${levelNum}/${total}`;
+    const completed = this.levels.filter(l => this.completedLevels.has(l.id)).length;
+    const pct = Math.round((completed / total) * 100);
+    if (this.levelIndicator) this.levelIndicator.textContent = `Level ${levelNum}/${total} (${pct}%)`;
     if (this.progressFill) {
-      const completed = this.levels.filter(l => this.completedLevels.has(l.id)).length;
-      this.progressFill.style.width = `${(completed / total) * 100}%`;
+      this.progressFill.style.width = `${pct}%`;
     }
     if (this.categoryDisplay) this.categoryDisplay.textContent = level.category;
   }
@@ -809,11 +851,27 @@ class SudoQuest {
     const lower = trimmed.toLowerCase();
     if (this.playgroundMode) { this.handlePlaygroundInput(trimmed); return; }
     if (this.sandboxMode) { this.handleSandboxInput(trimmed); return; }
-    if (this.awaitingReady) { this.handleReadyInput(lower); return; }
-    if (this.awaitingCategory) { this.handleCategoryInput(lower); return; }
+    if (this.awaitingReady) {
+      if (this.handleReadyInput(lower)) return;
+      // Fall through to special commands
+    }
+    if (this.awaitingCategory) {
+      if (this.handleCategoryInput(lower)) return;
+      // Fall through to special commands
+    }
 
     // Special commands
     if (this.handleSpecialCommand(lower)) return;
+
+    // If still on ready/category screen, show hint instead of trying to execute code
+    if (this.awaitingReady) {
+      this.addLine('Type "y" to start, or "help" for available commands.', 'dim');
+      return;
+    }
+    if (this.awaitingCategory) {
+      this.addLine(`Unknown category "${lower}". Type one of: ${CATEGORIES.map(c => c.key).join(', ')}`, 'error');
+      return;
+    }
 
     // Execute
     this.isExecuting = true;
@@ -877,6 +935,7 @@ class SudoQuest {
       learn: () => this.enterSandbox(),
       sandbox: () => this.enterSandbox(),
       sound: () => this.toggleSound(),
+      timestop: () => this.toggleTimer(),
       stats: () => this.showStats(),
       playground: () => this.enterPlayground(),
       streak: () => this.showStreak(),
@@ -936,6 +995,7 @@ class SudoQuest {
       ['review',       'Spaced review queue'],
       ['projects',     'Mini-project tracker'],
       ['sound',        'Toggle sound fx'],
+      ['timestop',     'Pause/resume timer'],
       ['?',            'Keyboard shortcuts'],
       ['help',         'Show this help'],
     ];
@@ -1703,6 +1763,7 @@ class SudoQuest {
     this.completedLevels.add(level.id);
     this.saveProgress();
     this.updateScoreDisplay();
+    this.updateHeader(level);
 
     // Check achievements
     this.checkAchievements();
@@ -1777,6 +1838,31 @@ class SudoQuest {
       return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
     }
     return `${m}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+  }
+
+  toggleTimer() {
+    if (!this.gameStarted) {
+      this.addLine('Timer is only active during gameplay.', 'dim');
+      return;
+    }
+    if (this.timerRunning) {
+      // Pause
+      this.timerElapsedBeforeStop = Date.now() - this.sessionStartTime;
+      this.levelElapsedBeforeStop = Date.now() - this.levelStartTime;
+      this.timerRunning = false;
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.timerInterval = null;
+      this.timerPausedByUser = true;
+      this.addLine('[TIMER] Paused. Type "timestop" again to resume.', 'system');
+    } else if (this.timerPausedByUser) {
+      // Resume
+      this.sessionStartTime = Date.now() - this.timerElapsedBeforeStop;
+      this.levelStartTime = Date.now() - this.levelElapsedBeforeStop;
+      this.timerRunning = true;
+      this.timerInterval = setInterval(() => this.updateTimerDisplay(), 50);
+      this.timerPausedByUser = false;
+      this.addLine('[TIMER] Resumed.', 'system');
+    }
   }
 
   onLevelCompleteTimer(levelId) {
@@ -2149,6 +2235,56 @@ class SudoQuest {
     const on = sound.toggle();
     this.addLine(`Sound effects ${on ? 'enabled' : 'disabled'}.`, 'system');
     if (on) sound.playLevelComplete();
+  }
+
+  // ── Music Panel ─────────────────────────────────────────
+
+  toggleMusicPanel(forceState) {
+    if (!this.musicPanel) return;
+    const show = forceState !== undefined ? forceState : !this.musicPanel.classList.contains('open');
+    if (show) {
+      this.musicPanel.hidden = false;
+      this.musicPanel.classList.add('open');
+      // Restore last URL
+      try {
+        const saved = localStorage.getItem('sudoquest_music_url');
+        if (saved && !this.musicEmbedWrap.querySelector('iframe')) {
+          this.musicUrlInput.value = saved;
+          this.loadMusicUrl();
+        }
+      } catch (_) {}
+    } else {
+      this.musicPanel.classList.remove('open');
+      this.musicPanel.hidden = true;
+    }
+  }
+
+  loadMusicUrl() {
+    const raw = this.musicUrlInput?.value.trim();
+    if (!raw) return;
+
+    const embedUrl = this.parseSpotifyUrl(raw);
+    if (!embedUrl) {
+      this.musicEmbedWrap.innerHTML = '<p class="music-placeholder">Invalid URL. Paste a Spotify track, album, or playlist link.</p>';
+      return;
+    }
+
+    try { localStorage.setItem('sudoquest_music_url', raw); } catch (_) {}
+
+    this.musicEmbedWrap.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.src = embedUrl;
+    iframe.allow = 'encrypted-media';
+    iframe.loading = 'lazy';
+    iframe.sandbox = 'allow-scripts allow-same-origin allow-popups';
+    this.musicEmbedWrap.appendChild(iframe);
+  }
+
+  parseSpotifyUrl(url) {
+    // Match: open.spotify.com/(track|album|playlist|episode|show)/ID
+    const m = url.match(/open\.spotify\.com\/(track|album|playlist|episode|show)\/([a-zA-Z0-9]+)/);
+    if (m) return `https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0`;
+    return null;
   }
 
   // ── Learning Sandbox ──────────────────────────────────────

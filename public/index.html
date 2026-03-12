@@ -85,6 +85,21 @@
         </div>
       </main>
 
+      <!-- Music Panel -->
+      <aside class="music-panel" id="music-panel" hidden>
+        <div class="music-panel-header">
+          <span class="music-panel-title">Now Playing</span>
+          <button class="music-close-btn" id="music-close-btn" title="Close">&times;</button>
+        </div>
+        <div class="music-embed-wrap" id="music-embed-wrap">
+          <p class="music-placeholder">Paste a Spotify link below to start listening.</p>
+        </div>
+        <div class="music-input-row">
+          <input type="text" id="music-url-input" class="music-url-input" placeholder="Spotify URL..." spellcheck="false" autocomplete="off">
+          <button id="music-load-btn" class="music-load-btn" title="Load">&#9654;</button>
+        </div>
+      </aside>
+
       <!-- Action Toolbar -->
       <aside class="action-toolbar" id="action-toolbar">
         <button class="toolbar-btn" data-cmd="hint" title="Reveal a hint">
@@ -126,6 +141,10 @@
         <button class="toolbar-btn" data-cmd="sound" title="Toggle sound">
           <span class="toolbar-icon">&#9835;</span>
           <span class="toolbar-label">Sound</span>
+        </button>
+        <button class="toolbar-btn" id="music-toggle-btn" title="Toggle music player">
+          <span class="toolbar-icon">&#9835;</span>
+          <span class="toolbar-label">Music</span>
         </button>
         <button class="toolbar-btn" data-cmd="help" title="Show commands">
           <span class="toolbar-icon">i</span>
@@ -173,6 +192,7 @@
       <div class="kb-row"><kbd>review</kbd><span>Spaced review queue</span></div>
       <div class="kb-row"><kbd>projects</kbd><span>Mini-project tracker</span></div>
       <div class="kb-row"><kbd>sound</kbd><span>Toggle sound effects</span></div>
+      <div class="kb-row"><kbd>timestop</kbd><span>Pause/resume timer</span></div>
       <div class="kb-footer">Press Esc or Ctrl+/ to close</div>
     </div>
   </div>
