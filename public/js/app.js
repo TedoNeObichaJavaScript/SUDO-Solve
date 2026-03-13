@@ -499,7 +499,6 @@ class SudoQuest {
     this.musicVolumeSlider = document.getElementById('music-volume-slider');
     this.musicVolumeValue = document.getElementById('music-volume-value');
     this.musicVolumeIcon = document.getElementById('music-volume-icon');
-    this.musicPlayerType = null; // 'youtube' or 'spotify'
     this.ytPlayer = null;       // YouTube iframe reference
     this.musicVolume = 80;      // default volume
 
@@ -2476,31 +2475,26 @@ class SudoQuest {
     const raw = this.musicUrlInput?.value.trim();
     if (!raw) return;
 
-    const result = this.parseMusicUrl(raw);
-    if (!result) {
-      this.musicEmbedWrap.innerHTML = '<p class="music-placeholder">Invalid URL. Paste a Spotify or YouTube link.</p>';
+    const embedUrl = this.parseYouTubeUrl(raw);
+    if (!embedUrl) {
+      this.musicEmbedWrap.innerHTML = '<p class="music-placeholder">Invalid URL. Paste a YouTube link.</p>';
       return;
     }
 
     try { localStorage.setItem('sudoquest_music_url', raw); } catch (_) {}
 
-    this.musicPlayerType = result.type;
+    this.musicPlayerType = 'youtube';
     this.musicEmbedWrap.innerHTML = '';
     const iframe = document.createElement('iframe');
-    iframe.src = result.embedUrl;
+    iframe.src = embedUrl;
     iframe.allow = 'encrypted-media; autoplay';
     iframe.loading = 'lazy';
     iframe.setAttribute('allowfullscreen', '');
-
-    if (result.type === 'spotify') {
-      iframe.sandbox = 'allow-scripts allow-same-origin allow-popups';
-    } else if (result.type === 'youtube') {
-      iframe.id = 'yt-music-iframe';
-      iframe.sandbox = 'allow-scripts allow-same-origin allow-popups allow-presentation';
-    }
+    iframe.id = 'yt-music-iframe';
+    iframe.sandbox = 'allow-scripts allow-same-origin allow-popups allow-presentation';
 
     this.musicEmbedWrap.appendChild(iframe);
-    this.ytPlayer = (result.type === 'youtube') ? iframe : null;
+    this.ytPlayer = iframe;
 
     // Show volume row
     if (this.musicVolumeRow) this.musicVolumeRow.hidden = false;
@@ -2509,11 +2503,7 @@ class SudoQuest {
     setTimeout(() => this.applyMusicVolume(), 1000);
   }
 
-  parseMusicUrl(url) {
-    // Spotify: open.spotify.com/(track|album|playlist|episode|show)/ID
-    const sp = url.match(/open\.spotify\.com\/(track|album|playlist|episode|show)\/([a-zA-Z0-9]+)/);
-    if (sp) return { type: 'spotify', embedUrl: `https://open.spotify.com/embed/${sp[1]}/${sp[2]}?theme=0` };
-
+  parseYouTubeUrl(url) {
     // YouTube: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID, youtube.com/shorts/ID
     let ytId = null;
     const yt1 = url.match(/(?:youtube\.com\/watch\?.*v=|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
@@ -2522,17 +2512,16 @@ class SudoQuest {
       const yt2 = url.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
       if (yt2) ytId = yt2[1];
     }
-    if (ytId) return { type: 'youtube', embedUrl: `https://www.youtube.com/embed/${ytId}?enablejsapi=1&autoplay=1&rel=0` };
-
     // YouTube Music: music.youtube.com/watch?v=ID
-    const ytm = url.match(/music\.youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/);
-    if (ytm) return { type: 'youtube', embedUrl: `https://www.youtube.com/embed/${ytm[1]}?enablejsapi=1&autoplay=1&rel=0` };
-
-    return null;
+    if (!ytId) {
+      const ytm = url.match(/music\.youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/);
+      if (ytm) ytId = ytm[1];
+    }
+    return ytId ? `https://www.youtube.com/embed/${ytId}?enablejsapi=1&autoplay=1&rel=0` : null;
   }
 
   applyMusicVolume() {
-    if (this.ytPlayer && this.musicPlayerType === 'youtube') {
+    if (this.ytPlayer) {
       // Use YouTube IFrame API postMessage to set volume
       try {
         this.ytPlayer.contentWindow.postMessage(JSON.stringify({
@@ -2542,7 +2531,6 @@ class SudoQuest {
         }), '*');
       } catch (_) {}
     }
-    // Spotify embeds don't support external volume control — user controls via the player
   }
 
   // ── Learning Sandbox ──────────────────────────────────────
